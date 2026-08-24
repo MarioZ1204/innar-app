@@ -4435,9 +4435,17 @@
   }
 
   function armModoContenedoraActual() {
-    const parentId = armState.diasParentId || 0;
-    if (!parentId) return 'facturacion';
-    const p = armDiaById(parentId);
+    let id = armState.diasParentId || 0;
+    const seen = new Set();
+    while (id && !seen.has(id)) {
+      seen.add(id);
+      const p = armDiaById(id);
+      if (!p) break;
+      const pid = armDiaParentId(p);
+      if (!pid) return p.modo || 'facturacion';
+      id = pid;
+    }
+    const p = armDiaById(armState.diasParentId);
     return p?.modo || 'facturacion';
   }
 
@@ -4805,6 +4813,8 @@
     const huerfanasRaiz = !armState.diasParentId ? lista.filter((d) => !d.es_contenedor) : [];
     const faltanContenedorasRaiz = !armState.diasParentId && armContenedorasRaiz().length < 3;
     const dragHint = armPuedeArrastrarDia() ? 'Mantenga pulsado para mover' : '';
+    const modoCont = armModoContenedoraActual();
+    const esUcqnVista = modoCont === 'ucqn';
     panel.innerHTML = `<div class="sop-panel-head">
         <div>
           <h3 style="margin:0"><i data-lucide="calendar"></i> ${escapeHtml(armState.periodoLabel || 'Mes')}</h3>
@@ -4812,8 +4822,10 @@
         <div class="sop-panel-head-tools">
           ${htmlSopFolderViewToggle('arm')}
           ${armState.diasParentId ? htmlArmZipCarpetaActualBtn() : `${htmlArmZipPaqueteBtn()}${htmlArmZipUnificadoBtn()}${htmlArmZipFacturadosBtn()}`}
-          ${puedeGestionarDia && armState.diasParentId && armModoContenedoraActual() === 'anexo_fidu' ? `<button type="button" class="sop-btn sop-btn-ghost" id="btnSopArmSyncAnexoModulo"><i data-lucide="refresh-cw"></i> Sincronizar desde Anexo</button>` : ''}
-          ${puedeGestionarDia && armState.diasParentId ? `<button type="button" class="sop-btn sop-btn-teal" id="btnSopArmNuevoDiaInline"><i data-lucide="folder-plus"></i> ${escapeHtml(armLabelNuevaCarpetaModo(armModoContenedoraActual()))}</button>` : ''}
+          ${puedeGestionarDia && armState.diasParentId && modoCont === 'anexo_fidu' ? `<button type="button" class="sop-btn sop-btn-ghost" id="btnSopArmSyncAnexoModulo"><i data-lucide="refresh-cw"></i> Sincronizar desde Anexo</button>` : ''}
+          ${puedeGestionarDia && esUcqnVista ? `<button type="button" class="sop-btn sop-btn-ghost" id="btnSopArmNuevaCarpetaUcqn"><i data-lucide="folder-tree"></i> Nueva carpeta</button>` : ''}
+          ${puedeGestionarDia && armState.diasParentId ? `<button type="button" class="sop-btn sop-btn-teal" id="btnSopArmNuevoDiaInline"><i data-lucide="folder-plus"></i> ${escapeHtml(armLabelNuevaCarpetaModo(modoCont))}</button>` : ''}
+          ${esUcqnVista && sopPerm('soportes.armado.importar_pdx') ? `<button type="button" class="sop-btn sop-btn-ghost" id="btnSopArmTraerPdxUcqn"><i data-lucide="database"></i> Traer de Cargar reportes</button>` : ''}
         </div>
       </div>
       <div class="sop-panel-body">
@@ -4822,7 +4834,8 @@
           <button type="button" class="sop-btn sop-btn-ghost sop-btn-sm" id="btnSopArmRepararContenedoras" style="margin-left:8px">Reparar ahora</button>
         </div>` : ''}
         ${!armState.diasParentId ? `<p style="font-size:.82rem;color:#64748b;margin:0 0 12px">Abra una contenedora para crear carpetas de día, anexos o personas (UCQN). Las tres contenedoras del mes se crean automáticamente.</p>` : ''}
-        ${armState.diasParentId && armModoContenedoraActual() === 'anexo_fidu' ? `<p style="font-size:.82rem;color:#64748b;margin:0 0 12px">Los anexos se leen del módulo <strong>Anexo FIDU</strong> (carpeta del mes creada allí por usted). Soportes no crea carpetas en Anexo. Use <strong>Sincronizar desde Anexo</strong> tras crear archivos en el módulo.</p>` : ''}
+        ${armState.diasParentId && modoCont === 'anexo_fidu' ? `<p style="font-size:.82rem;color:#64748b;margin:0 0 12px">Los anexos se leen del módulo <strong>Anexo FIDU</strong> (carpeta del mes creada allí por usted). Soportes no crea carpetas en Anexo. Use <strong>Sincronizar desde Anexo</strong> tras crear archivos en el módulo.</p>` : ''}
+        ${esUcqnVista ? `<p style="font-size:.82rem;color:#64748b;margin:0 0 12px">Cree <strong>carpetas</strong> para agrupar (por fecha o estudio) y <strong>personas</strong> para guardar PDF. Use <strong>Traer de Cargar reportes</strong> para buscar por paciente, documento, estudio o archivo y copiarlos aquí.</p>` : ''}
         ${huerfanasRaiz.length ? `<div class="sop-panel-warn" style="margin-bottom:12px;padding:10px 12px;background:#fffbeb;border:1px solid #fde68a;border-radius:8px;font-size:.85rem;color:#92400e">
           <strong>${huerfanasRaiz.length} carpeta(s) de facturación</strong> siguen en la raíz del mes (no se borraron). Abra <strong>Facturas FIDU</strong> o arrástrelas ahí. Los archivos en disco no se eliminaron.
         </div>` : ''}
@@ -4898,6 +4911,14 @@
       renderArmadoContextBar();
     });
     panel.querySelector('#btnSopArmNuevoDiaInline')?.addEventListener('click', modalNuevoDiaArmado);
+    panel.querySelector('#btnSopArmNuevaCarpetaUcqn')?.addEventListener('click', modalNuevaContenedoraArmado);
+    panel.querySelector('#btnSopArmTraerPdxUcqn')?.addEventListener('click', () => {
+      modalImportDepositoEnExpediente(null, null, {
+        ucqn: true,
+        parentId: armState.diasParentId,
+        queryInicial: ''
+      });
+    });
     sopIcons(panel);
     bindArmMigrarRipsButtons(panel);
     bindArmZipButtons(panel);
@@ -5694,6 +5715,9 @@
           <h3 style="margin:0"><i data-lucide="user"></i> ${escapeHtml(e.paciente_nombre || e.codigo || 'Persona')}</h3>
           <div style="font-size:.85rem;color:#64748b;margin-top:4px">UCQN · ${pdfs.length} PDF</div>
         </div>
+        <div class="sop-panel-head-tools">
+          ${sopPerm('soportes.armado.importar_pdx') ? `<button type="button" class="sop-btn sop-btn-teal sop-btn-sm" id="btnSopUcqnTraerPdx"><i data-lucide="database"></i> Traer de Cargar reportes</button>` : ''}
+        </div>
       </div>
       <div class="sop-panel-body">
         ${sopPerm('soportes.armado.subir') ? `<div id="sopUcqnDropzone" class="sop-dropzone sop-dropzone-compact" style="margin-bottom:16px">
@@ -5765,6 +5789,12 @@
         const res = await apiFetch(`/api/soportes/armado/expedientes/${expId}/pdfs/${parseInt(b.dataset.ucqnDel, 10)}`, { method: 'DELETE' });
         if (!res.ok) { const d = await res.json(); sopToast(d.error, 'error'); return; }
         await abrirExpedienteArmado(expId);
+      });
+    });
+    panel.querySelector('#btnSopUcqnTraerPdx')?.addEventListener('click', () => {
+      modalImportDepositoEnExpediente(expId, null, {
+        ucqn: true,
+        queryInicial: e.paciente_nombre || e.codigo || ''
       });
     });
     sopIcons(panel);
@@ -6216,8 +6246,11 @@
     sopIcons(modal);
   }
 
-  function modalImportDepositoEnExpediente(expId, filtroSlot = null) {
+  function modalImportDepositoEnExpediente(expId, filtroSlot = null, opts = {}) {
+    const esUcqn = !!opts.ucqn;
+    const parentId = parseInt(opts.parentId, 10) || 0;
     let selectedId = null;
+    const selectedIds = new Set();
     let searchTimer = null;
     const titulos = { PDX: 'reporte (PDX)', CRC: 'comprobante (CRC)', OPF: 'orden / HC (OPF)' };
     const filtrosHint = {
@@ -6225,19 +6258,23 @@
       CRC: 'Solo carpetas <strong>COMPROBANTES</strong>.',
       PDX: 'Solo carpetas <strong>PSG</strong>, <strong>VTM</strong>, <strong>EEG</strong> y <strong>TEST DE LATENCIA</strong>.'
     };
-    const titulo = filtroSlot ? titulos[filtroSlot] || filtroSlot : 'archivo cargado';
-    const hintFiltro = filtroSlot && filtrosHint[filtroSlot]
-      ? `<p class="sop-pdx-format-nota" style="margin:-4px 0 12px">${filtrosHint[filtroSlot]}</p>`
-      : '';
+    const titulo = esUcqn
+      ? 'archivos de Cargar reportes'
+      : (filtroSlot ? titulos[filtroSlot] || filtroSlot : 'archivo cargado');
+    const hintFiltro = esUcqn
+      ? '<p class="sop-pdx-format-nota" style="margin:-4px 0 12px">Busque por <strong>paciente</strong>, <strong>documento</strong>, <strong>estudio</strong> o nombre de archivo. Puede marcar varios. Se copian a UCQN sin modificar el original; si no existe la carpeta de la persona, se crea.</p>'
+      : (filtroSlot && filtrosHint[filtroSlot]
+        ? `<p class="sop-pdx-format-nota" style="margin:-4px 0 12px">${filtrosHint[filtroSlot]}</p>`
+        : '');
     const modal = openSopModal(`
-      <h3><i data-lucide="database" style="vertical-align:-3px;width:22px"></i> Buscar ${escapeHtml(titulo)} en archivos cargados</h3>
-      <p style="font-size:.85rem;color:#64748b;margin:-8px 0 12px">Busque por paciente y seleccione el archivo. Se copiará al expediente sin modificar el original.</p>
+      <h3><i data-lucide="database" style="vertical-align:-3px;width:22px"></i> Buscar ${escapeHtml(titulo)}</h3>
+      <p style="font-size:.85rem;color:#64748b;margin:-8px 0 12px">${esUcqn ? 'Seleccione uno o más PDF de Cargar reportes.' : 'Busque por paciente y seleccione el archivo. Se copiará al expediente sin modificar el original.'}</p>
       ${hintFiltro}
       <div class="sop-field">
-        <label>Paciente</label>
+        <label>Paciente, documento, estudio o archivo</label>
         <div class="sop-search-wrap" style="max-width:none">
           <i data-lucide="search"></i>
-          <input type="search" id="sopImpPdxBuscar" class="sop-search" placeholder="Paciente, documento, estudio o archivo…" autocomplete="off">
+          <input type="search" id="sopImpPdxBuscar" class="sop-search" placeholder="Paciente, documento, estudio o archivo…" autocomplete="off" value="${escapeHtml(opts.queryInicial || '')}">
         </div>
       </div>
       <div id="sopImpPdxResults" class="sop-import-results">
@@ -6245,35 +6282,53 @@
       </div>
       <div class="sop-dialog-actions">
         <button type="button" class="sop-btn sop-btn-ghost" id="sopImpCancel">Cancelar</button>
-        <button type="button" class="sop-btn sop-btn-primary" id="sopImpOk" disabled>Usar archivo seleccionado</button>
+        <button type="button" class="sop-btn sop-btn-primary" id="sopImpOk" disabled>${esUcqn ? 'Traer seleccionados' : 'Usar archivo seleccionado'}</button>
       </div>`);
     const resultsEl = modal.querySelector('#sopImpPdxResults');
     const btnOk = modal.querySelector('#sopImpOk');
     const input = modal.querySelector('#sopImpPdxBuscar');
 
     function renderImportResults(list) {
-      let items = (list || []).filter((r) => r.puede_vincular_fe !== false && r.destino_modo !== 'no_soportes');
+      let items = list || [];
+      if (!esUcqn) {
+        items = items.filter((r) => r.puede_vincular_fe !== false && r.destino_modo !== 'no_soportes');
+      }
       if (!items.length) {
-        resultsEl.innerHTML = '<div class="sop-empty" style="padding:20px;font-size:.85rem">Sin resultados para este tipo de carpeta</div>';
+        resultsEl.innerHTML = '<div class="sop-empty" style="padding:20px;font-size:.85rem">Sin resultados para esta búsqueda</div>';
         selectedId = null;
+        selectedIds.clear();
         btnOk.disabled = true;
         return;
       }
-      resultsEl.innerHTML = items.map((r) => `
-        <div class="sop-import-item${selectedId === r.archivo_id ? ' selected' : ''}" data-pdx-archivo="${r.archivo_id}">
+      resultsEl.innerHTML = items.map((r) => {
+        const id = r.archivo_id;
+        const sel = esUcqn ? selectedIds.has(id) : selectedId === id;
+        const badge = esUcqn
+          ? escapeHtml(r.carpeta_nombre || 'reporte')
+          : escapeHtml(r.destino_importacion || 'PDX');
+        return `<div class="sop-import-item${sel ? ' selected' : ''}" data-pdx-archivo="${id}">
           <div>
             <strong>${escapeHtml(r.paciente_nombre)}</strong>
-            <span class="sop-badge sop-badge-pendiente" style="margin:0 0 0 6px;font-size:.7rem">→ ${escapeHtml(r.destino_importacion || 'PDX')}</span>
-            <div class="sop-import-item-meta">${escapeHtml(r.fecha_estudio || '—')} · ${escapeHtml(r.estudio_texto || '—')}</div>
-            <div class="sop-import-item-meta">${escapeHtml(r.carpeta_nombre)} (${escapeHtml(r.periodo)})</div>
+            <span class="sop-badge sop-badge-pendiente" style="margin:0 0 0 6px;font-size:.7rem">${esUcqn ? '' : '→ '}${badge}</span>
+            <div class="sop-import-item-meta">${escapeHtml(r.paciente_documento || '—')} · ${escapeHtml(r.fecha_estudio || '—')} · ${escapeHtml(r.estudio_texto || '—')}</div>
+            <div class="sop-import-item-meta">${escapeHtml(r.carpeta_nombre)} (${escapeHtml(r.periodo)}) · ${escapeHtml(r.nombre_archivo_original || r.nombre_archivo_display || '')}</div>
           </div>
-          <i data-lucide="file-text" style="width:18px;height:18px;color:#94a3b8;flex-shrink:0"></i>
-        </div>`).join('');
+          <i data-lucide="${esUcqn && sel ? 'check-square' : 'file-text'}" style="width:18px;height:18px;color:#94a3b8;flex-shrink:0"></i>
+        </div>`;
+      }).join('');
       resultsEl.querySelectorAll('.sop-import-item').forEach((row) => {
         row.addEventListener('click', () => {
-          selectedId = parseInt(row.dataset.pdxArchivo, 10);
-          resultsEl.querySelectorAll('.sop-import-item').forEach((el) => el.classList.toggle('selected', parseInt(el.dataset.pdxArchivo, 10) === selectedId));
-          btnOk.disabled = !selectedId;
+          const id = parseInt(row.dataset.pdxArchivo, 10);
+          if (esUcqn) {
+            if (selectedIds.has(id)) selectedIds.delete(id);
+            else selectedIds.add(id);
+            row.classList.toggle('selected', selectedIds.has(id));
+            btnOk.disabled = selectedIds.size === 0;
+          } else {
+            selectedId = id;
+            resultsEl.querySelectorAll('.sop-import-item').forEach((el) => el.classList.toggle('selected', parseInt(el.dataset.pdxArchivo, 10) === selectedId));
+            btnOk.disabled = !selectedId;
+          }
         });
       });
       sopIcons(resultsEl);
@@ -6290,7 +6345,7 @@
       resultsEl.innerHTML = '<div class="sop-empty" style="padding:20px"><i data-lucide="loader" class="sop-empty-icon"></i> Buscando…</div>';
       sopIcons(resultsEl);
       try {
-        const slotParam = filtroSlot ? `&slot=${encodeURIComponent(filtroSlot)}` : '';
+        const slotParam = (!esUcqn && filtroSlot) ? `&slot=${encodeURIComponent(filtroSlot)}` : '';
         const res = await apiFetch(`/api/soportes/pdx/buscar?q=${encodeURIComponent(q)}${slotParam}`);
         const data = await res.json();
         renderImportResults(data.resultados || []);
@@ -6307,35 +6362,64 @@
 
     modal.querySelector('#sopImpCancel').onclick = () => closeSopModal(modal);
     btnOk.onclick = async () => {
-      if (!selectedId) return sopToast('Seleccione un archivo', 'warning');
+      const ids = esUcqn ? [...selectedIds] : (selectedId ? [selectedId] : []);
+      if (!ids.length) return sopToast('Seleccione un archivo', 'warning');
       btnOk.disabled = true;
-      btnOk.innerHTML = '<i data-lucide="loader"></i> Vinculando…';
+      btnOk.innerHTML = '<i data-lucide="loader"></i> Copiando…';
       input.disabled = true;
       sopIcons(btnOk);
       try {
-        const r = await apiFetch(`/api/soportes/armado/expedientes/${expId}/importar-deposito`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            pdx_archivo_id: selectedId,
-            ...(filtroSlot === 'OPF' || filtroSlot === 'CRC' || filtroSlot === 'PDX'
-              ? { slot_destino: filtroSlot }
-              : {})
-          })
-        });
-        const d = await r.json().catch(() => ({}));
-        if (!r.ok) throw new Error(d.error || 'No se pudo vincular');
-        if (d.warnings?.length) sopToast(d.warnings.join(' · '), 'warning');
+        if (esUcqn && parentId && !expId) {
+          const r = await apiFetch(`/api/soportes/armado/periodos/${armState.periodoId}/ucqn/importar-deposito`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ parent_id: parentId, pdx_archivo_ids: ids })
+          });
+          const d = await r.json().catch(() => ({}));
+          if (!r.ok) throw new Error(d.error || 'No se pudo importar');
+          closeSopModal(modal);
+          if (d.errores?.length) sopToast(`${d.message || 'Importación parcial'} · ${d.errores.length} con error`, 'warning');
+          else sopToast(d.message || 'Archivos copiados a UCQN', 'success');
+          const savedParent = armState.diasParentId;
+          await recargarDiasArmadoSinResetearNav();
+          armState.diasParentId = savedParent;
+          renderArmadoDiasExplorer();
+          renderArmadoContextBar();
+          return;
+        }
+        let ok = 0;
+        let fail = 0;
+        for (const id of ids) {
+          const r = await apiFetch(`/api/soportes/armado/expedientes/${expId}/importar-deposito`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              pdx_archivo_id: id,
+              ...(!esUcqn && (filtroSlot === 'OPF' || filtroSlot === 'CRC' || filtroSlot === 'PDX')
+                ? { slot_destino: filtroSlot }
+                : {})
+            })
+          });
+          const d = await r.json().catch(() => ({}));
+          if (!r.ok) {
+            fail++;
+            sopToast(d.error || 'No se pudo copiar un archivo', 'error');
+          } else {
+            ok++;
+            if (d.warnings?.length) sopToast(d.warnings.join(' · '), 'warning');
+          }
+        }
         closeSopModal(modal);
-        sopToast(d.message || 'Archivo vinculado', 'success');
-        abrirExpedienteArmado(expId);
+        sopToast(ok ? `${ok} archivo(s) copiado(s)${fail ? `, ${fail} con error` : ''}` : 'No se copió ningún archivo', ok ? 'success' : 'error');
+        if (expId) abrirExpedienteArmado(expId);
       } catch (error) {
         sopToast(error.message || 'Error de conexión', 'error');
         btnOk.disabled = false;
-        btnOk.textContent = 'Usar archivo seleccionado';
+        btnOk.textContent = esUcqn ? 'Traer seleccionados' : 'Usar archivo seleccionado';
         input.disabled = false;
       }
     };
+    if ((opts.queryInicial || '').trim().length >= 2) runImportSearch();
     input.focus();
   }
 
@@ -6647,19 +6731,24 @@
     const parentId = armState.diasParentId || 0;
     if (!parentId) return sopToast('Entre en Facturas FIDU, Anexo FIDU o U C Q N para crear carpetas', 'warning');
     const dentroDe = armDiaById(parentId);
-    const modo = dentroDe?.modo || 'facturacion';
+    const modo = armModoContenedoraActual();
     const titulo = armLabelNuevaCarpetaModo(modo);
     const hint = modo === 'anexo_fidu'
       ? 'Se vinculará al módulo <strong>Anexo FIDU</strong> para editar filas y exportar Excel.'
       : modo === 'ucqn'
-        ? 'Carpeta de persona para guardar varios PDF sin tipificación.'
+        ? 'Carpeta de persona para guardar varios PDF sin tipificación. Puede crear varias a la vez (un nombre por línea).'
         : 'Se crearán automáticamente las carpetas <strong>RIPS</strong> y <strong>SOPORTES</strong>.';
     const placeholder = modo === 'ucqn' ? 'Ej: Juan Pérez García' : modo === 'anexo_fidu' ? 'Ej: ANEXO 1 JUNIO' : 'Ej: MAYO 1, MAYO 2-3';
+    const campoNombre = modo === 'ucqn'
+      ? `<div class="sop-field"><label>Nombre(s) de persona</label>
+          <textarea id="sopArmDiaNom" rows="4" placeholder="${escapeHtml(placeholder)}&#10;Ana Gómez"></textarea>
+          <p style="font-size:.8rem;color:#64748b;margin:6px 0 0">Una persona por línea para crear varias carpetas.</p></div>`
+      : `<div class="sop-field"><label>Nombre</label>
+          <input id="sopArmDiaNom" placeholder="${escapeHtml(placeholder)}"></div>`;
     const modal = openSopModal(`
       <h3><i data-lucide="folder-plus"></i> ${escapeHtml(titulo)}</h3>
       <p style="font-size:.85rem;color:#64748b;margin:-6px 0 12px">Dentro de <strong>${escapeHtml(dentroDe?.nombre_display || '')}</strong>. ${hint}</p>
-      <div class="sop-field"><label>Nombre</label>
-        <input id="sopArmDiaNom" placeholder="${escapeHtml(placeholder)}"></div>
+      ${campoNombre}
       ${modo === 'facturacion' ? `<div class="sop-field"><label>Estado de facturación</label>
         <select id="sopArmDiaFact">
           <option value="a_facturar">A facturar</option>
@@ -6671,27 +6760,46 @@
       </div>`);
     modal.querySelector('#sopArmDiaCancel').onclick = () => closeSopModal(modal);
     modal.querySelector('#sopArmDiaOk').onclick = async () => {
-      const nombre_display = $('sopArmDiaNom').value.trim();
+      const rawNom = $('sopArmDiaNom')?.value || '';
+      const nombres = (modo === 'ucqn'
+        ? rawNom.split(/\r?\n/)
+        : [rawNom]).map((s) => s.trim()).filter(Boolean);
       const estado_facturacion = $('sopArmDiaFact')?.value || 'a_facturar';
-      if (!nombre_display) return sopToast('Indique el nombre', 'warning');
-      const res = await apiFetch(`/api/soportes/armado/periodos/${armState.periodoId}/dias`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ nombre_display, estado_facturacion, parent_id: parentId })
-      });
-      const data = await res.json();
-      if (!res.ok) { sopToast(data.error, 'error'); return; }
+      if (!nombres.length) return sopToast('Indique el nombre', 'warning');
+      let ok = 0;
+      let lastId = 0;
+      const errs = [];
+      for (const nombre_display of nombres) {
+        const res = await apiFetch(`/api/soportes/armado/periodos/${armState.periodoId}/dias`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ nombre_display, estado_facturacion, parent_id: parentId })
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          errs.push(`${nombre_display}: ${data.error || 'error'}`);
+          continue;
+        }
+        ok += 1;
+        lastId = Number(data.dia?.id || lastId) || lastId;
+      }
+      if (!ok) {
+        sopToast(errs[0] || 'No se pudo crear la carpeta', 'error');
+        return;
+      }
       closeSopModal(modal);
-      sopToast(modo === 'ucqn' ? 'Persona creada' : modo === 'anexo_fidu' ? 'Anexo creado y vinculado' : 'Carpeta creada con RIPS y SOPORTES', 'success');
+      if (errs.length) sopToast(`${ok} creada(s). ${errs.length} con error`, 'warning');
+      else sopToast(modo === 'ucqn'
+        ? (ok > 1 ? `${ok} personas creadas` : 'Persona creada')
+        : modo === 'anexo_fidu' ? 'Anexo creado y vinculado' : 'Carpeta creada con RIPS y SOPORTES', 'success');
       const savedParent = armState.diasParentId;
-      const newDiaId = Number(data.dia?.id || 0) || 0;
       bumpArmNavEpoch();
       await recargarDiasArmadoSinResetearNav();
       armState.diasParentId = savedParent;
-      if (newDiaId) {
+      if (ok === 1 && lastId) {
         armState.vista = 'day';
-        armState.diaId = newDiaId;
-        await seleccionarDiaArmado(newDiaId);
+        armState.diaId = lastId;
+        await seleccionarDiaArmado(lastId);
       } else {
         renderArmadoDiasExplorer();
         renderArmadoContextBar();

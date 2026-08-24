@@ -66,10 +66,71 @@ async function fetchModoDia(db, diaId) {
 
 async function fetchModoParentContenedora(db, parentId) {
   if (!parentId) return 'facturacion';
-  const row = await fetchDiaRow(db, parentId);
-  if (!row) return 'facturacion';
-  if (row.es_contenedor) return normalizarModoDia(row.modo);
-  return normalizarModoDia(row.modo);
+  let row = await fetchDiaRow(db, parentId);
+  const seen = new Set();
+  while (row && !seen.has(row.id)) {
+    seen.add(row.id);
+    const parentIdRow = Number(row.parent_id || 0);
+    if (!parentIdRow) return normalizarModoDia(row.modo);
+    row = await fetchDiaRow(db, parentIdRow);
+  }
+  return row ? normalizarModoDia(row.modo) : 'facturacion';
+}
+
+function nombreCarpetaPersonaUcqn(raw) {
+  const nombre = String(raw || '').trim().replace(/\s+/g, ' ');
+  return nombre.slice(0, 120) || 'Persona';
+}
+
+function nombreCarpetaPersonaDesdePdx(pdxRow) {
+  const desdePaciente = String(pdxRow?.paciente_nombre || '').trim();
+  if (desdePaciente) return nombreCarpetaPersonaUcqn(desdePaciente);
+  const archivo = String(pdxRow?.nombre_archivo_original || pdxRow?.nombre_archivo_display || '')
+    .trim()
+    .replace(/\.pdf$/i, '');
+  return nombreCarpetaPersonaUcqn(archivo || 'Persona');
+}
+
+async function asegurarPersonaUcqnBajoParent(db, {
+  periodoId,
+  parentId,
+  nombreDisplay,
+  fechaDate,
+  usuarioId,
+  estadoFacturacion = 'a_facturar'
+}) {
+  const nombre = nombreCarpetaPersonaUcqn(nombreDisplay);
+  if (!parentId) throw new Error('Indique la carpeta UCQN destino');
+  const modoParent = await fetchModoParentContenedora(db, parentId);
+  if (!esModoUcqn(modoParent)) {
+    throw new Error('Solo puede crear personas dentro de U C Q N');
+  }
+  const exist = await db.query(
+    `SELECT * FROM sop_dias
+     WHERE periodo_id = ? AND parent_id = ? AND nombre_display = ? AND es_contenedor = 0
+     LIMIT 1`,
+    [periodoId, parentId, nombre]
+  );
+  let diaId;
+  let creada = false;
+  if (exist.length) {
+    diaId = exist[0].id;
+  } else {
+    const { ensureContenedoresForDia } = require('./soportes-armado-structure');
+    const diaNum = await nextSopDiaNumero(db, periodoId);
+    const r = await db.execute(
+      `INSERT INTO sop_dias (periodo_id, parent_id, dia, fecha, nombre_display, es_contenedor, modo, estado_facturacion)
+       VALUES (?,?,?,?,?,?,?,?)`,
+      [periodoId, parentId, diaNum, fechaDate, nombre, 0, 'ucqn', estadoFacturacion]
+    );
+    diaId = insertRowId(r);
+    if (!diaId) throw new Error('No se pudo crear la carpeta de persona');
+    creada = true;
+    await ensureContenedoresForDia(db, diaId);
+  }
+  const expedienteId = await asegurarExpedienteUcqn(db, diaId, nombre, usuarioId);
+  if (!expedienteId) throw new Error('No se pudo abrir el expediente UCQN');
+  return { diaId, expedienteId, nombre, creada };
 }
 
 async function ensureContenedoresForDiaModo(db, diaId, modoRaw) {
@@ -350,6 +411,9 @@ module.exports = {
   fetchDiaRow,
   fetchModoDia,
   fetchModoParentContenedora,
+  nombreCarpetaPersonaUcqn,
+  nombreCarpetaPersonaDesdePdx,
+  asegurarPersonaUcqnBajoParent,
   ensureContenedoresForDiaModo,
   ensureContenedorasRaizPeriodo,
   buscarCarpetaAnexoPeriodo,

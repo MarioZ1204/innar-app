@@ -83,6 +83,8 @@ const {
   reparentCarpetasFacturacionHuerfanas,
   crearAnexoArchivoParaDia,
   asegurarExpedienteUcqn,
+  asegurarPersonaUcqnBajoParent,
+  nombreCarpetaPersonaDesdePdx,
   esModoAnexo,
   esModoUcqn,
   esModoFacturacion
@@ -1420,7 +1422,8 @@ router.get('/soportes/pdx/buscar', requireAuth, requireRoleOrPerm(ROLES_SOPORTES
         color_tema: a.color_tema,
         destino_importacion: dest.modo === 'no_soportes' ? '—' : (dest.modo === 'vinculo' ? dest.etiqueta : (dest.slot || 'PDX')),
         destino_modo: dest.modo,
-        puede_vincular_fe: dest.modo !== 'no_soportes'
+        puede_vincular_fe: dest.modo !== 'no_soportes',
+        puede_importar_ucqn: true
       };
     });
     res.json({ resultados });
@@ -2326,9 +2329,7 @@ router.post('/soportes/armado/periodos/:id/dias', requireAuth, requireRoleOrPerm
     }
     const estado_facturacion = req.body.estado_facturacion === 'facturados' ? 'facturados' : 'a_facturar';
     if (!nombre_display) return res.status(400).json({ error: 'Indique el nombre de la carpeta del día (ej: MAYO 1, MAYO 2-3)' });
-    const modo = es_contenedor
-      ? normalizarModoDia(req.body?.modo || 'facturacion')
-      : await fetchModoParentContenedora(db, parent_id);
+    const modo = await fetchModoParentContenedora(db, parent_id);
     const periodo = await db.query('SELECT periodo FROM sop_periodos WHERE id = ?', [periodoId]);
     if (!periodo.length) return res.status(404).json({ error: 'Periodo no encontrado' });
     if (parent_id > 0) {
@@ -3042,7 +3043,8 @@ async function handleImportarDesdeDeposito(req, res) {
     const { carpetaCoincideSlotDeposito } = require('../utils/soportes-deposito-filtro');
     const destPreview = resolverDestinoImportacion(pdx[0]);
     const slotDestino = String(req.body.slot_destino || '').toUpperCase();
-    if (slotDestino && !carpetaCoincideSlotDeposito(slotDestino, pdx[0])) {
+    const esUcqn = esModoUcqn(exp.dia_modo);
+    if (!esUcqn && slotDestino && !carpetaCoincideSlotDeposito(slotDestino, pdx[0])) {
       return res.status(400).json({
         error: `El archivo no pertenece a una carpeta válida para ${slotDestino}. Revise los archivos cargados.`
       });
@@ -3060,7 +3062,9 @@ async function handleImportarDesdeDeposito(req, res) {
     const detail = await buildExpedienteDetail(req.params.id);
     const msg = result.modo === 'vinculo'
       ? `Vinculado (${destPreview.etiqueta})`
-      : `Importado en ${result.slot || destPreview.slot}`;
+      : result.modo === 'pdf'
+        ? `Copiado a UCQN (${result.nombre_archivo || 'PDF'})`
+        : `Importado en ${result.slot || destPreview.slot}`;
     res.json({ ok: true, message: msg, ...result, expediente: detail, warnings });
     notifySoportesArmado({ accion: 'importar_pdx', expedienteId: parseInt(req.params.id, 10) });
   } catch (e) {
@@ -3073,6 +3077,94 @@ async function handleImportarDesdeDeposito(req, res) {
 
 router.post('/soportes/armado/expedientes/:id/importar-pdx', requireAuth, requireRoleOrPerm(ROLES_SOPORTES, 'soportes.armado.importar_pdx'), handleImportarDesdeDeposito);
 router.post('/soportes/armado/expedientes/:id/importar-deposito', requireAuth, requireRoleOrPerm(ROLES_SOPORTES, 'soportes.armado.importar_pdx'), handleImportarDesdeDeposito);
+
+router.post('/soportes/armado/periodos/:id/ucqn/importar-deposito', requireAuth, requireRoleOrPerm(ROLES_SOPORTES, 'soportes.armado.importar_pdx'), async (req, res) => {
+  try {
+    const periodoId = parseInt(req.params.id, 10);
+    const visCtx = await loadVisibleEnSoportesCtx();
+    if (!await requirePeriodoArmadoAccesible(req, res, periodoId, visCtx)) return;
+    const parentId = normalizarParentIdDia(req.body?.parent_id);
+    if (!parentId) return res.status(400).json({ error: 'Indique la carpeta UCQN destino' });
+    const parentRows = await db.query('SELECT * FROM sop_dias WHERE id = ?', [parentId]);
+    if (!parentRows.length) return res.status(400).json({ error: 'Carpeta destino no encontrada' });
+    if (parentRows[0].periodo_id !== periodoId) {
+      return res.status(400).json({ error: 'La carpeta destino debe estar en el mismo mes' });
+    }
+    if (!parentRows[0].es_contenedor) {
+      return res.status(400).json({ error: 'El destino debe ser una carpeta contenedora de UCQN' });
+    }
+    const modoParent = await fetchModoParentContenedora(db, parentId);
+    if (!esModoUcqn(modoParent)) {
+      return res.status(400).json({ error: 'Solo puede importar a carpetas dentro de U C Q N' });
+    }
+    const idsRaw = Array.isArray(req.body?.pdx_archivo_ids) ? req.body.pdx_archivo_ids : [];
+    const pdxIds = [...new Set(idsRaw.map((n) => parseInt(n, 10)).filter((n) => Number.isFinite(n) && n > 0))].slice(0, 40);
+    if (!pdxIds.length) return res.status(400).json({ error: 'Seleccione uno o más archivos de Cargar reportes' });
+
+    const placeholders = pdxIds.map(() => '?').join(',');
+    const pdxRows = await db.query(
+      `SELECT a.*, c.periodo, c.nombre_display AS carpeta_nombre, c.color_tema, c.roles_visibles
+       FROM sop_pdx_archivos a JOIN sop_pdx_carpetas c ON c.id = a.carpeta_id
+       WHERE a.id IN (${placeholders})`,
+      pdxIds
+    );
+    const byId = new Map(pdxRows.map((r) => [r.id, r]));
+    const periodoRows = await db.query('SELECT periodo FROM sop_periodos WHERE id = ?', [periodoId]);
+    const fechaDate = `${periodoRows[0]?.periodo || '2026-01'}-01`;
+    const { importarArchivoUcqnDesdeDeposito } = require('../utils/soportes-deposito-import');
+    const importados = [];
+    const errores = [];
+    let carpetasCreadas = 0;
+    for (const pdxId of pdxIds) {
+      const pdxRow = byId.get(pdxId);
+      if (!pdxRow) {
+        errores.push({ pdx_archivo_id: pdxId, error: 'Archivo no encontrado en reportes' });
+        continue;
+      }
+      const denied = denySinAccesoCarpetaPdx(req, pdxRow);
+      if (denied) {
+        errores.push({ pdx_archivo_id: pdxId, error: denied.error });
+        continue;
+      }
+      try {
+        const persona = await asegurarPersonaUcqnBajoParent(db, {
+          periodoId,
+          parentId,
+          nombreDisplay: nombreCarpetaPersonaDesdePdx(pdxRow),
+          fechaDate,
+          usuarioId: req.session.usuarioId
+        });
+        if (persona.creada) carpetasCreadas += 1;
+        const result = await importarArchivoUcqnDesdeDeposito(
+          { id: persona.expedienteId, dia_id: persona.diaId, dia_modo: 'ucqn' },
+          pdxRow,
+          req.session.usuarioId
+        );
+        importados.push({
+          pdx_archivo_id: pdxId,
+          dia_id: persona.diaId,
+          expediente_id: persona.expedienteId,
+          persona: persona.nombre,
+          carpeta_creada: persona.creada,
+          nombre_archivo: result.nombre_archivo
+        });
+      } catch (impErr) {
+        errores.push({ pdx_archivo_id: pdxId, error: impErr.message || 'No se pudo importar' });
+      }
+    }
+    res.json({
+      ok: errores.length < pdxIds.length,
+      message: `${importados.length} archivo(s) copiado(s) a UCQN${carpetasCreadas ? `, ${carpetasCreadas} carpeta(s) nueva(s)` : ''}`,
+      importados,
+      errores,
+      carpetas_creadas: carpetasCreadas
+    });
+    notifySoportesArmado({ accion: 'importar_pdx_ucqn', periodoId, parentId });
+  } catch (e) {
+    logger.error('[SOPORTES] importar deposito UCQN lote:', e);
+    res.status(500).json({ error: safeError(e) });
+  }
+});
 
 function multerFieldFile(req, field) {
   const list = req.files?.[field];

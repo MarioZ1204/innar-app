@@ -38,12 +38,13 @@ async function resolveUcqnUploadContext(exp) {
   return { dia, relDir, absDir, periodo, contenedorNombre };
 }
 
-async function saveUcqnPdf(exp, tempPath, originalName, usuarioId) {
+async function saveUcqnPdf(exp, tempPath, originalName, usuarioId, opts = {}) {
   if (!fileLooksLikePdf(tempPath)) {
     throw new Error('Solo se permiten archivos PDF');
   }
   const ctx = await resolveUcqnUploadContext(exp);
   if (!ctx) throw new Error('Expediente UCQN no válido');
+  const origen = opts.origen === 'copia_pdx' ? 'copia_pdx' : 'upload';
 
   let diskName = ucqnDiskName(originalName);
   let destPath = path.join(ctx.absDir, diskName);
@@ -75,14 +76,21 @@ async function saveUcqnPdf(exp, tempPath, originalName, usuarioId) {
 
   const r = await db.execute(
     `INSERT INTO sop_exp_archivos (expediente_id, tipo, nombre_archivo, nombre_original, ruta_relativa, tamano_bytes, origen, subido_por)
-     VALUES (?,?,?,?,?,?, 'upload', ?)`,
-    [exp.id, 'PDF', diskName, originalName, rutaRelativa, tamano, usuarioId]
+     VALUES (?,?,?,?,?,?,?,?)`,
+    [exp.id, 'PDF', diskName, originalName, rutaRelativa, tamano, origen, usuarioId]
   );
+  const archivoId = r.insertId;
+  if (opts.pdxArchivoId && archivoId) {
+    await db.execute(
+      'UPDATE sop_exp_archivos SET pdx_archivo_id = ? WHERE id = ?',
+      [opts.pdxArchivoId, archivoId]
+    );
+  }
   return {
     slot: 'PDF',
     nombre_archivo: diskName,
     nombre_original: originalName,
-    archivo_id: r.insertId
+    archivo_id: archivoId
   };
 }
 

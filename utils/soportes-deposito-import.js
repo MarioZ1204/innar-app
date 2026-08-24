@@ -91,8 +91,44 @@ async function registrarVinculo(expedienteId, pdxArchivoId, rol, rutaRelativa, n
 }
 
 const { moveFileSafe: moveFileToDest } = require('./fs-move-safe');
+const { esModoUcqn } = require('./soportes-armado-modos');
+const { saveUcqnPdf } = require('./soportes-ucqn-upload');
+
+async function importarArchivoUcqnDesdeDeposito(exp, pdxRow, usuarioId) {
+  await assertExpedienteSoportes(exp);
+  const tmpCopy = await copiarDepositoATemporal(pdxRow);
+  try {
+    const result = await saveUcqnPdf(
+      exp,
+      tmpCopy,
+      pdxRow.nombre_archivo_original || pdxRow.nombre_archivo_display || 'documento.pdf',
+      usuarioId,
+      { origen: 'copia_pdx', pdxArchivoId: pdxRow.id }
+    );
+    try { if (fs.existsSync(tmpCopy)) fs.unlinkSync(tmpCopy); } catch (_) { /* ignore */ }
+    try {
+      await db.execute(
+        'INSERT INTO sop_transferencias (pdx_archivo_id, expediente_id, usuario_id) VALUES (?,?,?)',
+        [pdxRow.id, exp.id, usuarioId]
+      );
+    } catch (_) { /* la transferencia es informativa */ }
+    return {
+      ok: true,
+      modo: 'pdf',
+      slot: 'PDF',
+      etiqueta: 'PDF',
+      ...result
+    };
+  } catch (e) {
+    try { if (fs.existsSync(tmpCopy)) fs.unlinkSync(tmpCopy); } catch (_) { /* ignore */ }
+    throw e;
+  }
+}
 
 async function importarArchivoDesdeDeposito(exp, pdxRow, usuarioId, opts = {}) {
+  if (esModoUcqn(exp.dia_modo)) {
+    return importarArchivoUcqnDesdeDeposito(exp, pdxRow, usuarioId);
+  }
   await assertExpedienteSoportes(exp);
   const slotForzado = opts.slotForzado ? String(opts.slotForzado).toUpperCase() : '';
   let dest = resolverDestinoImportacion(pdxRow);
@@ -177,5 +213,6 @@ module.exports = {
   temaDeArchivo,
   TEMA_LABEL,
   resolverDestinoImportacion,
-  importarArchivoDesdeDeposito
+  importarArchivoDesdeDeposito,
+  importarArchivoUcqnDesdeDeposito
 };
