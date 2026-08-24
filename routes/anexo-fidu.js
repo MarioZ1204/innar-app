@@ -26,7 +26,8 @@ const {
   sanitizePersonaBody,
   armarRegistroAnexo,
   upsertPersonaEnDb,
-  PERSONAS_CSV_COLUMNS
+  PERSONAS_CSV_COLUMNS,
+  canonizarAfiliacionAnexo
 } = require('../utils/anexo-fidu-personas');
 const { buildAnexoFiduExcelBuffer } = require('../utils/anexo-fidu-export');
 const {
@@ -761,6 +762,8 @@ router.post('/anexo-fidu/armar', requireAuth, requirePermiso(PERM_ANEXO_FIDU), a
 router.post('/anexo-fidu/personas', requireAuth, requirePermiso(PERM_ANEXO_FIDU), async (req, res) => {
   try {
     const persona = sanitizePersonaBody(req.body || {});
+    const canAfil = canonizarAfiliacionAnexo(persona.afiliacion);
+    if (canAfil) persona.afiliacion = canAfil;
     const existing = await db.query(
       'SELECT id FROM anexo_fidu_personas WHERE numero_documento = ? LIMIT 1',
       [persona.numero_documento]

@@ -6,7 +6,10 @@ const {
   anexoRegistroToPersona,
   armarRegistroAnexo,
   correoParaAnexo,
-  CORREO_ANEXO_SIN_EMAIL
+  CORREO_ANEXO_SIN_EMAIL,
+  canonizarAfiliacionAnexo,
+  AFILIACION_ANEXO_COTIZANTE,
+  AFILIACION_ANEXO_BENEFICIARIO
 } = require('../utils/anexo-fidu-personas');
 
 describe('anexo-fidu-personas', () => {
@@ -104,7 +107,16 @@ describe('anexo-fidu-personas', () => {
     });
     expect(anexo.direccion).toBe('CALLE 10 — MARILUZ');
     expect(anexo.correo).toBe('test@mail.com');
-    expect(anexo.especiales_excepcion_cotizante).toBe('Especiales o de Excepcion cotizante');
+    expect(anexo.especiales_excepcion_cotizante).toBe('Especiales o de Excepción Cotizante');
+  });
+
+  test('canonizarAfiliacionAnexo solo deja cotizante o beneficiario de excepción', () => {
+    expect(canonizarAfiliacionAnexo('Cotizante')).toBe(AFILIACION_ANEXO_COTIZANTE);
+    expect(canonizarAfiliacionAnexo('Especiales o de Excepcion cotizante')).toBe(AFILIACION_ANEXO_COTIZANTE);
+    expect(canonizarAfiliacionAnexo('Especiales o de Excepción Beneficiario')).toBe(AFILIACION_ANEXO_BENEFICIARIO);
+    expect(canonizarAfiliacionAnexo('BENEFICIARIO')).toBe(AFILIACION_ANEXO_BENEFICIARIO);
+    expect(canonizarAfiliacionAnexo('Adicional')).toBe('');
+    expect(canonizarAfiliacionAnexo('')).toBe('');
   });
 
   test('CREATE TABLE incluye columnas de firma de paciente y acudiente', () => {

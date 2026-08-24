@@ -5,7 +5,8 @@ const {
   PERSONA_DB_EXTRA_COLUMNS,
   sanitizePersonaBody,
   sanitizeFirmaPaciente,
-  upsertPersonaEnDb
+  upsertPersonaEnDb,
+  canonizarAfiliacionAnexo
 } = require('./anexo-fidu-personas');
 
 /** Metadatos de campos (alineado con formulario anexo). */
@@ -327,6 +328,10 @@ async function guardarPersonaFiduMerge(db, body = {}, contexto = 'anexo') {
   const existente = rows.length ? personaRowToPlain(rows[0]) : { numero_documento: doc };
   const merged = mergePersonaBodies(existente, body);
   const persona = sanitizePersonaBody(merged);
+  if (String(contexto || 'anexo').toLowerCase() === 'anexo' && persona.afiliacion) {
+    const can = canonizarAfiliacionAnexo(persona.afiliacion);
+    if (can) persona.afiliacion = can;
+  }
   PERSONA_DB_EXTRA_COLUMNS.forEach((k) => {
     persona[k] = merged[k] || '';
   });
@@ -358,5 +363,6 @@ module.exports = {
   personaBodyDesdeComprobanteModal,
   personaBodyDesdeCertificadoModal,
   buscarPersonaFiduPorDocumento,
+  canonizarAfiliacionAnexo,
   guardarPersonaFiduMerge
 };

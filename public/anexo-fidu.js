@@ -586,9 +586,28 @@
   }
 
   const AFILIACION_OPCIONES = [
-    'Especiales o de Excepcion cotizante',
-    'Especiales o de Excepcion beneficiario'
+    'Especiales o de Excepción Cotizante',
+    'Especiales o de Excepción Beneficiario'
   ];
+
+  function canonizarAfiliacionAnexoUi(raw) {
+    const PF = window.innarPersonaFidu;
+    if (PF && typeof PF.canonizarAfiliacionAnexo === 'function') {
+      return PF.canonizarAfiliacionAnexo(raw);
+    }
+    const n = String(raw || '')
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/\s+/g, ' ')
+      .trim();
+    if (!n) return '';
+    if (n.includes('beneficiario')) return AFILIACION_OPCIONES[1];
+    if (n.includes('cotizante') || n.includes('especial') || n.includes('excepcion')) {
+      return AFILIACION_OPCIONES[0];
+    }
+    return '';
+  }
 
   function normalizarFechaAfidu(val) {
     const s = String(val || '').trim();
@@ -623,10 +642,14 @@
       return `<input type="text" class="innar-fecha-input" id="afidu-p-${f.key}" data-key="${f.key}" value="${escapeHtml(v)}" placeholder="AAAA-MM-DD" autocomplete="off" />`;
     }
     if (f.key === 'afiliacion') {
+      const chosen = canonizarAfiliacionAnexoUi(v) || v;
       const opts = AFILIACION_OPCIONES.map((o) =>
-        `<option value="${escapeHtml(o)}"${v === o ? ' selected' : ''}>${escapeHtml(o)}</option>`
+        `<option value="${escapeHtml(o)}"${chosen === o ? ' selected' : ''}>${escapeHtml(o)}</option>`
       ).join('');
-      return `<select id="afidu-p-${f.key}" data-key="${f.key}"><option value="">Seleccionar…</option>${opts}</select>`;
+      const extra = (v && !canonizarAfiliacionAnexoUi(v) && !AFILIACION_OPCIONES.includes(v))
+        ? `<option value="${escapeHtml(v)}" selected>${escapeHtml(v)}</option>`
+        : '';
+      return `<select id="afidu-p-${f.key}" data-key="${f.key}"><option value="">Seleccionar…</option>${extra}${opts}</select>`;
     }
     if (f.key === 'tipo_documento') {
       return `<input type="text" id="afidu-p-${f.key}" data-key="${f.key}" value="${escapeHtml(v)}" placeholder="Se calcula con la fecha de nacimiento" />`;
@@ -652,7 +675,7 @@
     { key: 'ciudad_residencia', label: 'CIUDADDERESIDENCIA', long: true },
     { key: 'telefono', label: 'TELEFONO' },
     { key: 'correo', label: 'CORREO' },
-    { key: 'afiliacion', label: 'AFILIACION', long: true }
+    { key: 'afiliacion', label: 'Tipo de afiliación', long: true }
   ];
 
   const CAMPOS_PACIENTE_ANEXO = new Set([
@@ -663,7 +686,7 @@
 
   const CAMPOS_LARGOS = new Set([
     'direccion', 'nombre_servicio', 'nombre_diagnostico', 'causa_atencion',
-    'ciudad_residencia', 'ciudad_nacimiento', 'especiales_excepcion_cotizante'
+    'ciudad_residencia', 'ciudad_nacimiento'
   ]);
 
   function parseValorMoneda(val) {
@@ -1133,18 +1156,38 @@
     const txt = td.querySelector('.afidu-cell-text');
     const valorOriginal = txt?.textContent.trim() === '—' ? '' : (txt?.textContent.trim() || '');
     td.classList.add('afidu-cell-editing');
-    const isLong = CAMPOS_LARGOS.has(key);
-    const input = document.createElement(isLong ? 'textarea' : 'input');
-    input.className = 'afidu-cell-input';
-    if (!isLong) input.type = 'text';
-    input.value = valorOriginal;
+    let input;
+    if (key === 'especiales_excepcion_cotizante') {
+      input = document.createElement('select');
+      input.className = 'afidu-cell-input';
+      const canon = canonizarAfiliacionAnexoUi(valorOriginal);
+      const chosen = canon || valorOriginal;
+      const extra = (valorOriginal && !canon && !AFILIACION_OPCIONES.includes(valorOriginal))
+        ? `<option value="${escapeHtml(valorOriginal)}" selected>${escapeHtml(valorOriginal)}</option>`
+        : '';
+      input.innerHTML = `<option value="">Seleccionar…</option>${extra}` +
+        AFILIACION_OPCIONES.map((o) =>
+          `<option value="${escapeHtml(o)}"${chosen === o ? ' selected' : ''}>${escapeHtml(o)}</option>`
+        ).join('');
+      input.value = chosen;
+    } else {
+      const isLong = CAMPOS_LARGOS.has(key);
+      input = document.createElement(isLong ? 'textarea' : 'input');
+      input.className = 'afidu-cell-input';
+      if (!isLong) input.type = 'text';
+      input.value = valorOriginal;
+    }
+    const isLong = CAMPOS_LARGOS.has(key) && key !== 'especiales_excepcion_cotizante';
     td.innerHTML = '';
     td.appendChild(input);
     input.focus();
-    if (isLong) input.select();
-    else input.setSelectionRange(input.value.length, input.value.length);
+    if (input.tagName !== 'SELECT') {
+      if (isLong) input.select();
+      else if (input.setSelectionRange) input.setSelectionRange(input.value.length, input.value.length);
+    }
 
-    _celdaEditando = { td, input, key, valorOriginal, tr: td.closest('tr') };
+    const trFila = td.closest('tr');
+    _celdaEditando = { td, input, key, valorOriginal, tr: trFila };
 
     if (key === 'codigo_cie10') {
       let cieTimer;
@@ -1153,7 +1196,7 @@
         cieTimer = setTimeout(async () => {
           if (_celdaEditando?.input !== input) return;
           try {
-            await aplicarNombreDiagnosticoDesdeCie10(tr, input.value);
+            await aplicarNombreDiagnosticoDesdeCie10(trFila, input.value);
           } catch (_) { /* ignore mientras escribe */ }
         }, 320);
       });
@@ -1178,7 +1221,10 @@
   async function finalizarEdicionCelda(guardar) {
     if (!_celdaEditando) return;
     const { td, input, key, valorOriginal, tr } = _celdaEditando;
-    const nuevoValor = input.value.trim();
+    let nuevoValor = input.value.trim();
+    if (key === 'especiales_excepcion_cotizante') {
+      nuevoValor = canonizarAfiliacionAnexoUi(nuevoValor) || nuevoValor;
+    }
     _celdaEditando = null;
     td.classList.remove('afidu-cell-editing');
     td.innerHTML = `<span class="afidu-cell-text">${valorCeldaTexto(nuevoValor)}</span>`;

@@ -42,6 +42,30 @@ function normEspacios(s) {
   return String(s || '').trim().replace(/\s+/g, ' ');
 }
 
+/** Valores del tipo de afiliación en Anexo FIDU (no usar las del comprobante). */
+const AFILIACION_ANEXO_COTIZANTE = 'Especiales o de Excepción Cotizante';
+const AFILIACION_ANEXO_BENEFICIARIO = 'Especiales o de Excepción Beneficiario';
+const OPCIONES_AFILIACION_ANEXO = [AFILIACION_ANEXO_COTIZANTE, AFILIACION_ANEXO_BENEFICIARIO];
+
+function normAfiliacionAnexo(s) {
+  return String(s || '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function canonizarAfiliacionAnexo(raw) {
+  const n = normAfiliacionAnexo(raw);
+  if (!n) return '';
+  if (n.includes('beneficiario')) return AFILIACION_ANEXO_BENEFICIARIO;
+  if (n.includes('cotizante') || n.includes('especial') || n.includes('excepcion')) {
+    return AFILIACION_ANEXO_COTIZANTE;
+  }
+  return '';
+}
+
 /**
  * Colapsa frases consecutivas duplicadas en la dirección (error típico columna J).
  */
@@ -213,7 +237,7 @@ function personaToAnexoPaciente(persona) {
     direccion: direccionConBarrio(persona),
     telefono: persona.telefono || '',
     correo: correoParaAnexo(persona.correo),
-    especiales_excepcion_cotizante: persona.afiliacion || '',
+    especiales_excepcion_cotizante: canonizarAfiliacionAnexo(persona.afiliacion) || persona.afiliacion || '',
     fecha_nacimiento: fecha,
     ciudad_nacimiento: persona.ciudad_nacimiento || '',
     ciudad_residencia: persona.ciudad_residencia || ''
@@ -364,6 +388,10 @@ module.exports = {
   correoParaAnexo,
   PERSONAS_CSV_COLUMNS,
   PERSONA_DB_EXTRA_COLUMNS,
+  AFILIACION_ANEXO_COTIZANTE,
+  AFILIACION_ANEXO_BENEFICIARIO,
+  OPCIONES_AFILIACION_ANEXO,
+  canonizarAfiliacionAnexo,
   sanitizeFirmaPaciente,
   ANEXO_KEYS_DESDE_PERSONA,
   parseCsvLine,

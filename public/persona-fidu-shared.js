@@ -57,14 +57,13 @@
     { value: 'Otro', label: 'Otro' }
   ];
 
-  /** Anexo / alta general (no mezclar con el comprobante FOMAG). */
+  /** Anexo: solo tipo de afiliación FOMAG (no mezclar con el comprobante). */
+  const AFILIACION_ANEXO_COTIZANTE = 'Especiales o de Excepción Cotizante';
+  const AFILIACION_ANEXO_BENEFICIARIO = 'Especiales o de Excepción Beneficiario';
   const OPCIONES_AFILIACION_ANEXO = [
     { value: '', label: '— Seleccionar —' },
-    { value: 'Cotizante', label: 'Cotizante' },
-    { value: 'Beneficiario', label: 'Beneficiario' },
-    { value: 'Adicional', label: 'Adicional' },
-    { value: 'Estudiante', label: 'Estudiante' },
-    { value: 'Pensionado', label: 'Pensionado' }
+    { value: AFILIACION_ANEXO_COTIZANTE, label: AFILIACION_ANEXO_COTIZANTE },
+    { value: AFILIACION_ANEXO_BENEFICIARIO, label: AFILIACION_ANEXO_BENEFICIARIO }
   ];
 
   const OPCIONES_AFILIACION_COMPROBANTE = [
@@ -142,9 +141,14 @@
     return new Set((camposFaltantes || []).map((c) => c.key || c).filter(Boolean));
   }
 
-  function labelsFaltantes(camposFaltantes) {
+  function labelsFaltantes(camposFaltantes, contexto) {
+    const ctx = normalizarContexto(contexto);
     return (camposFaltantes || [])
-      .map((c) => c.label || labelDeCampo(c.key || c))
+      .map((c) => {
+        const key = c.key || c;
+        if (key === 'afiliacion' && ctx === 'anexo') return 'Tipo de afiliación';
+        return c.label || labelDeCampo(key);
+      })
       .filter(Boolean);
   }
 
@@ -167,6 +171,25 @@
     return `<select id="${id}" data-key="${key}"${cls}${ro}>${extra}${opts}</select>`;
   }
 
+  function canonizarAfiliacionAnexo(raw) {
+    const n = String(raw || '')
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/\s+/g, ' ')
+      .trim();
+    if (!n) return '';
+    if (n.includes('beneficiario')) return AFILIACION_ANEXO_BENEFICIARIO;
+    if (n.includes('cotizante') || n.includes('especial') || n.includes('excepcion')) {
+      return AFILIACION_ANEXO_COTIZANTE;
+    }
+    return '';
+  }
+
+  function valorSelectAfiliacionAnexo(raw) {
+    return canonizarAfiliacionAnexo(raw) || String(raw || '').trim();
+  }
+
   function htmlCampo(f, val, readonly, contexto) {
     const ro = readonly ? ' readonly style="opacity:.75"' : '';
     const id = `pfidu-${f.key}`;
@@ -181,7 +204,7 @@
         const mapped = mapearAfiliacionComprobante(val);
         return htmlSelect(id, f.key, mapped, opcionesAfiliacionComprobante(), readonly);
       }
-      return htmlSelect(id, f.key, val, OPCIONES_AFILIACION_ANEXO, readonly);
+      return htmlSelect(id, f.key, valorSelectAfiliacionAnexo(val), OPCIONES_AFILIACION_ANEXO, readonly);
     }
     if (f.key === 'tipo_documento') {
       return htmlSelect(id, f.key, val, OPCIONES_TIPO_DOC, readonly);
@@ -221,7 +244,7 @@
   }
 
   function htmlListaFaltantes(camposFaltantes, contexto) {
-    const labels = labelsFaltantes(camposFaltantes);
+    const labels = labelsFaltantes(camposFaltantes, contexto);
     if (!labels.length) return '';
     const titulo = normalizarContexto(contexto) === 'comprobante'
       ? 'Complete estos datos del comprobante:'
@@ -249,8 +272,11 @@
       const reqMark = esRequeridoEnContexto(f.key, contexto)
         ? ' <span class="pfidu-req" title="Obligatorio">*</span>'
         : '';
+      const label = (f.key === 'afiliacion' && contexto === 'anexo')
+        ? 'Tipo de afiliación'
+        : f.label;
       html += `<div class="pfidu-form-field${missClass}" data-field="${f.key}">
-        <label for="pfidu-${f.key}">${escapeHtml(f.label)}${reqMark}</label>
+        <label for="pfidu-${f.key}">${escapeHtml(label)}${reqMark}</label>
         ${htmlCampo(f, v, ro, contexto)}
       </div>`;
     });
@@ -312,13 +338,17 @@
     fn?.addEventListener('input', sync);
   }
 
-  function leerFormulario(root) {
+  function leerFormulario(root, contexto) {
     const persona = {};
+    const ctx = normalizarContexto(contexto || root?.dataset?.pfiduContexto);
     PERSONA_FORM.forEach((f) => {
       const el = root?.querySelector?.(`#pfidu-${f.key}`);
       if (!el) return;
       let val = el.value.trim();
       if (f.key === 'fecha_nacimiento') val = normalizarFecha(val);
+      if (f.key === 'afiliacion' && ctx === 'anexo') {
+        val = canonizarAfiliacionAnexo(val) || val;
+      }
       persona[f.key] = val;
     });
     return persona;
@@ -434,6 +464,8 @@
     camposParaFormulario,
     labelsFaltantes,
     esRequeridoEnContexto,
-    normalizarContexto
+    normalizarContexto,
+    OPCIONES_AFILIACION_ANEXO,
+    canonizarAfiliacionAnexo
   };
 })();
