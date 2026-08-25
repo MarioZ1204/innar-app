@@ -296,6 +296,19 @@
     $('docmodModalCertHoraEgreso').value = extras?.hora_egreso || defs.hora_egreso;
     $('docmodModalCertFuncionario').value = extras?.funcionario_nombre || defs.funcionario_nombre;
     $('docmodModalCertCargo').value = extras?.funcionario_cargo || defs.funcionario_cargo;
+    syncCertObservacionesUi({
+      incluir: !!(extras?.incluir_observaciones || extras?.observaciones),
+      texto: extras?.observaciones || ''
+    });
+  }
+
+  function syncCertObservacionesUi(opts = {}) {
+    const chk = $('docmodModalCertIncluirObs');
+    const wrap = $('docmodModalCertObsWrap');
+    const ta = $('docmodModalCertObservaciones');
+    if (chk) chk.checked = !!opts.incluir;
+    if (ta && opts.texto != null) ta.value = String(opts.texto || '');
+    if (wrap) wrap.classList.toggle('hidden', !chk?.checked);
   }
 
   function llenarModalComprobante(datos, extras) {
@@ -407,6 +420,10 @@
     if (!motivo) return 'El motivo / servicio es obligatorio';
     if (!fi || !hi || !fe || !he) return 'Complete las fechas y horas de ingreso y egreso';
     if (!func || !cargo) return 'Complete funcionario y cargo';
+    if ($('docmodModalCertIncluirObs')?.checked) {
+      const obs = String($('docmodModalCertObservaciones')?.value || '').trim();
+      if (!obs) return 'Escriba la observación o desmarque la opción';
+    }
     return null;
   }
 
@@ -439,6 +456,7 @@
   }
 
   function buildCertificadoPayload() {
+    const incluirObs = !!$('docmodModalCertIncluirObs')?.checked;
     return {
       origen: state.origen,
       paciente_nombre: $('docmodModalCertNombre')?.value?.trim(),
@@ -446,6 +464,8 @@
       tipo_documento: leerTipoIdRadio('docmodModalCertTipoId'),
       motivo: window.innarServicioCombo?.leerValor?.('docmodModalCertMotivo')
         || String($('docmodModalCertMotivo')?.value || '').trim().toLocaleUpperCase('es-CO'),
+      incluir_observaciones: incluirObs,
+      observaciones: incluirObs ? String($('docmodModalCertObservaciones')?.value || '').trim() : '',
       fecha_ingreso: normFecha($('docmodModalCertFechaIngreso')?.value),
       hora_ingreso: $('docmodModalCertHoraIngreso')?.value,
       fecha_egreso: normFecha($('docmodModalCertFechaEgreso')?.value),
@@ -647,6 +667,12 @@
     $('btnConfirmarModalDocumentosCita')?.addEventListener('click', () => confirmarModal());
     $('btnCancelarModalDocumentosCita')?.addEventListener('click', cerrarModal);
     $('btnCerrarModalDocumentosCita')?.addEventListener('click', cerrarModal);
+    $('docmodModalCertIncluirObs')?.addEventListener('change', () => {
+      syncCertObservacionesUi({ incluir: !!$('docmodModalCertIncluirObs')?.checked });
+      if ($('docmodModalCertIncluirObs')?.checked) {
+        $('docmodModalCertObservaciones')?.focus();
+      }
+    });
     $('modalDocumentosCita')?.addEventListener('click', (e) => {
       if (e.target?.id === 'modalDocumentosCita') cerrarModal();
     });

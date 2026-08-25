@@ -60,6 +60,8 @@ describe('certificado-asistencia', () => {
     expect(html).toContain('>Secretaria</div>');
     expect(html).toContain('1085259645');
     expect(html).toContain('POLISOMNOGRAFIA BASICA');
+    expect(html).toContain('Asistió a la entidad para:');
+    expect(html).not.toContain('Observaciones:');
     expect(html).toContain('3053560651');
     expect(html).toContain('6027299737');
     expect(html).toContain('Alejandra Benavides');
@@ -68,5 +70,45 @@ describe('certificado-asistencia', () => {
     expect(html).toContain(CERT_ASISTENCIA_PIE.codigo);
     expect(html).toContain(CERT_ASISTENCIA_PIE.fecha_actualizacion);
     expect(html).toContain('1 de 1');
+  });
+
+  test('observaciones opcionales: exige texto si se marca la opción', () => {
+    const sinTexto = validarPayloadCertificado({
+      paciente_nombre: 'FATIMA CORDERO',
+      paciente_documento: '1085259645',
+      motivo: 'POLISOMNOGRAFIA BASICA',
+      fecha_ingreso: '2026-06-23',
+      hora_ingreso: '19:00',
+      fecha_egreso: '2026-06-24',
+      hora_egreso: '05:00',
+      funcionario_nombre: 'Alejandra Benavides',
+      funcionario_cargo: 'Secretaria',
+      incluir_observaciones: true,
+      observaciones: '   '
+    });
+    expect(sinTexto.error).toMatch(/observación/i);
+
+    const ok = validarPayloadCertificado({
+      paciente_nombre: 'FATIMA CORDERO',
+      paciente_documento: '1085259645',
+      motivo: 'POLISOMNOGRAFIA BASICA',
+      fecha_ingreso: '2026-06-23',
+      hora_ingreso: '19:00',
+      fecha_egreso: '2026-06-24',
+      hora_egreso: '05:00',
+      funcionario_nombre: 'Alejandra Benavides',
+      funcionario_cargo: 'Secretaria',
+      incluir_observaciones: true,
+      observaciones: 'Llegó acompañado de acudiente'
+    });
+    expect(ok.error).toBeUndefined();
+    expect(ok.data.observaciones).toBe('Llegó acompañado de acudiente');
+    const html = buildCertificadoAsistenciaHtml(ok.data);
+    expect(html).toContain('Asistió a la entidad para:');
+    expect(html).toContain('Observaciones:');
+    expect(html).toContain('Llegó acompañado de acudiente');
+    const idxMotivo = html.indexOf('Asistió a la entidad para:');
+    const idxObs = html.indexOf('Observaciones:');
+    expect(idxObs).toBeGreaterThan(idxMotivo);
   });
 });

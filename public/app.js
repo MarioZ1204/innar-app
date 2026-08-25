@@ -15261,6 +15261,12 @@ function abrirModalCertificadoAsistencia(prefill) {
   set('certAsistHoraEgreso', prefill.hora_egreso);
   set('certAsistFuncionarioNombre', prefill.funcionario_nombre);
   set('certAsistFuncionarioCargo', prefill.funcionario_cargo);
+  const chkObs = $('certAsistIncluirObs');
+  const wrapObs = $('certAsistObsWrap');
+  const taObs = $('certAsistObservaciones');
+  if (chkObs) chkObs.checked = !!(prefill.incluir_observaciones || prefill.observaciones);
+  if (taObs) taObs.value = prefill.observaciones || '';
+  if (wrapObs) wrapObs.classList.toggle('hidden', !chkObs?.checked);
   const modal = $('modalCertificadoAsistencia');
   window.innarPersonaFidu?.bindFechaInputs?.(modal);
   if (modal) {
@@ -15285,6 +15291,12 @@ async function generarCertificadoAsistenciaPdf() {
     showToast('No tiene permiso para generar este certificado', 'error');
     return;
   }
+  const incluirObs = !!$('certAsistIncluirObs')?.checked;
+  const observaciones = incluirObs ? String($('certAsistObservaciones')?.value || '').trim() : '';
+  if (incluirObs && !observaciones) {
+    showToast('Escriba la observación o desmarque la opción', 'error');
+    return;
+  }
   const payload = {
     origen,
     paciente_nombre: _certAsistPacienteNombre,
@@ -15292,6 +15304,8 @@ async function generarCertificadoAsistenciaPdf() {
     tipo_documento: $('certAsistTipoDoc')?.value || 'CC',
     motivo: window.innarServicioCombo?.leerValor?.('certAsistMotivo')
       || String($('certAsistMotivo')?.value || '').trim().toLocaleUpperCase('es-CO'),
+    incluir_observaciones: incluirObs,
+    observaciones,
     fecha_ingreso: window.innarPersonaFidu?.normalizarFecha?.($('certAsistFechaIngreso')?.value) || $('certAsistFechaIngreso')?.value,
     hora_ingreso: $('certAsistHoraIngreso')?.value,
     fecha_egreso: window.innarPersonaFidu?.normalizarFecha?.($('certAsistFechaEgreso')?.value) || $('certAsistFechaEgreso')?.value,
@@ -15563,6 +15577,11 @@ function actualizarBotonesDocumentosCitaElectro() {
 function initCertificadoAsistenciaUi() {
   window.innarServicioCombo?.init?.('certAsistMotivo', {
     getOrigen: () => $('certAsistOrigen')?.value?.trim() || null
+  });
+  $('certAsistIncluirObs')?.addEventListener('change', () => {
+    const on = !!$('certAsistIncluirObs')?.checked;
+    $('certAsistObsWrap')?.classList.toggle('hidden', !on);
+    if (on) $('certAsistObservaciones')?.focus();
   });
   $('btnCerrarCertificadoAsistencia')?.addEventListener('click', cerrarModalCertificadoAsistencia);
   $('btnCancelarCertificadoAsistencia')?.addEventListener('click', cerrarModalCertificadoAsistencia);

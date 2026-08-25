@@ -78,6 +78,12 @@ function normalizarTipoDocumento(val) {
   return t === 'TI' ? 'TI' : 'CC';
 }
 
+function truthyFlag(val) {
+  return val === true || val === 1 || val === '1' || val === 'true' || val === 'on' || val === 'yes';
+}
+
+const CERT_ASISTENCIA_OBS_MAX = 500;
+
 function validarPayloadCertificado(body = {}) {
   const pacienteNombre = String(body.paciente_nombre || '').trim();
   const pacienteDocumento = String(body.paciente_documento || '').trim();
@@ -88,6 +94,10 @@ function validarPayloadCertificado(body = {}) {
   const horaEgreso = String(body.hora_egreso || '').trim();
   const funcionarioNombre = String(body.funcionario_nombre || '').trim();
   const funcionarioCargo = String(body.funcionario_cargo || '').trim();
+  const incluirObservaciones = truthyFlag(body.incluir_observaciones);
+  const observaciones = incluirObservaciones
+    ? String(body.observaciones || '').trim().slice(0, CERT_ASISTENCIA_OBS_MAX)
+    : '';
 
   if (!pacienteNombre) return { error: 'El nombre del paciente es obligatorio' };
   if (!pacienteDocumento) return { error: 'El documento del paciente es obligatorio' };
@@ -98,6 +108,9 @@ function validarPayloadCertificado(body = {}) {
   if (!parseHoraHm(horaEgreso)) return { error: 'Hora de egreso inválida' };
   if (!funcionarioNombre) return { error: 'El nombre del funcionario que certifica es obligatorio' };
   if (!funcionarioCargo) return { error: 'El cargo del funcionario es obligatorio' };
+  if (incluirObservaciones && !observaciones) {
+    return { error: 'Escriba la observación o desmarque la opción' };
+  }
 
   return {
     data: {
@@ -105,6 +118,8 @@ function validarPayloadCertificado(body = {}) {
       paciente_documento: pacienteDocumento,
       tipo_documento: normalizarTipoDocumento(body.tipo_documento),
       motivo,
+      observaciones,
+      incluir_observaciones: incluirObservaciones && !!observaciones,
       fecha_ingreso: fechaIngreso,
       hora_ingreso: horaIngreso,
       fecha_egreso: fechaEgreso,
@@ -218,10 +233,16 @@ function buildCertificadoAsistenciaHtml(data, fondo = {}) {
     .doc-tipo { letter-spacing: 0.12em; font-weight: 600; }
     .doc-numero { font-weight: 700; }
     .bloque-motivo {
-      margin: 2mm 0;
+      margin: 2mm 0 0;
       line-height: 1.45;
     }
     .bloque-motivo strong { font-weight: 700; }
+    .bloque-observaciones {
+      margin: 1.5mm 0 2mm;
+      line-height: 1.45;
+      white-space: pre-wrap;
+    }
+    .bloque-observaciones strong { font-weight: 700; }
     .fechas-grid {
       display: grid;
       grid-template-columns: 1fr 1fr;
@@ -351,6 +372,9 @@ function buildCertificadoAsistenciaHtml(data, fondo = {}) {
           <span>No: <span class="doc-numero">${escapeHtml(data.paciente_documento)}</span></span>
         </p>
         <p class="bloque-motivo">Asistió a la entidad para: <strong>${escapeHtml(data.motivo)}</strong></p>
+        ${data.observaciones
+    ? `<p class="bloque-observaciones">Observaciones: <strong>${escapeHtml(data.observaciones)}</strong></p>`
+    : ''}
         <div class="fechas-grid">
           <div class="fecha-item">
             <span class="fecha-label">Fecha ingreso</span>
@@ -419,6 +443,7 @@ module.exports = {
   CERT_ASISTENCIA_FIRMA_ELABORADO,
   CERT_ASISTENCIA_PIE,
   CERT_ASISTENCIA_TELEFONOS,
+  CERT_ASISTENCIA_OBS_MAX,
   formatFechaCertificado,
   formatHoraCertificado,
   validarPayloadCertificado,
