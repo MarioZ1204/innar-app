@@ -21,6 +21,7 @@ describe('realtime-mutation-broadcast', () => {
 
   test('omite poll, login, chat y descargas', () => {
     expect(shouldSkipPath('/eventos/poll')).toBe(true);
+    expect(shouldSkipPath('/eventos/stream')).toBe(true);
     expect(shouldSkipPath('/eventos/push')).toBe(true);
     expect(shouldSkipPath('/login')).toBe(true);
     expect(shouldSkipPath('/chat/conversaciones')).toBe(true);

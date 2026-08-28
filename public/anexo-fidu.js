@@ -2327,7 +2327,10 @@
     actualizarSidebarAfiduActivo();
     actualizarHeaderAfidu();
     afiduIcons($('view-anexo-fidu'));
-    if (!first) return;
+    if (!first) {
+      refrescarVistaAfiduActual().catch(() => {});
+      return;
+    }
     try {
       await cargarResumenPersonas();
       await refrescarVistaAfiduActual();

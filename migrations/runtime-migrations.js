@@ -1859,6 +1859,21 @@ const runtimeMigrations = [
         INDEX idx_sop_pdx_pap_elim (eliminado_en)
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`);
     }
+  },
+  {
+    name: 'rt_poll_events',
+    description: 'Cola de eventos tiempo-real en MySQL (poll entre workers Passenger)',
+    run: async (db) => {
+      await db.execute(`CREATE TABLE IF NOT EXISTS rt_poll_events (
+        id BIGINT AUTO_INCREMENT PRIMARY KEY,
+        usuario_id INT NULL,
+        event VARCHAR(100) NOT NULL,
+        payload JSON NULL,
+        created_at TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+        INDEX idx_rt_poll_since (id, created_at),
+        INDEX idx_rt_poll_user (usuario_id, id)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`);
+    }
   }
 ];
 

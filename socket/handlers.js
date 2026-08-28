@@ -2,7 +2,7 @@
 const logger = require('../utils/logger');
 
 function attachSockets() {
-  logger.info('[Realtime] Modo HTTP poll (/api/eventos/poll); Socket.IO no se monta.', { type: 'STARTUP' });
+  logger.info('[Realtime] Canal SSE /api/eventos/stream (poll HTTP de respaldo). Socket.IO no se monta en Hostinger.', { type: 'STARTUP' });
 }
 
 module.exports = { attachSockets };

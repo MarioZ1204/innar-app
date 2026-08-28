@@ -3361,6 +3361,11 @@
       if (!res.ok) { sopToast(data.error || 'Error', 'error'); return; }
       closeSopModal(modal);
       sopToast('Carpeta creada', 'success');
+      if (data.carpeta && data.carpeta.id) {
+        const ya = pdxState.carpetas.some((c) => Number(c.id) === Number(data.carpeta.id));
+        if (!ya) pdxState.carpetas.push(data.carpeta);
+        renderListaCarpetasPdx();
+      }
       await cargarCarpetasPdx();
       renderListaCarpetasPdx();
     };
@@ -4311,6 +4316,7 @@
       setupEntradaDocumentoPdx();
       const btnPap = $('btnSopPdxPapelera');
       if (btnPap) btnPap.style.display = sopPerm('modulo.papelera_pdx') ? '' : 'none';
+      refrescarVistaPdxActual().catch(() => {});
       return;
     }
     initPdxDone = true;
@@ -6911,7 +6917,10 @@
 
   window.initArmadoSoportes = function initArmadoSoportes() {
     sopIcons($('view-armado-soportes'));
-    if (initArmadoDone) return;
+    if (initArmadoDone) {
+      refrescarVistaArmadoActual().catch(() => {});
+      return;
+    }
     initArmadoDone = true;
     $('btnVolverArmadoSoportes')?.addEventListener('click', () => {
       sopArmNavOpen(false);

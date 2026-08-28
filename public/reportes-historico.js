@@ -562,7 +562,10 @@
 
   function initReportesHistorico() {
     sopIcons($('view-reportes-historico'));
-    if (initDone) return;
+    if (initDone) {
+      refrescar().catch(() => {});
+      return;
+    }
     initDone = true;
     $('btnVolverReportesHistorico')?.addEventListener('click', () => {
       if (typeof window.goToMenu === 'function') window.goToMenu();

@@ -1,5 +1,5 @@
 /**
- * Tiempo real vía GET /api/eventos/poll (sin Socket.IO / sin WebSocket).
+ * Tiempo real: canal SSE (GET /api/eventos/stream) con poll HTTP de respaldo.
  * Expone window.socket compatible: .on(...), .emit(...) → POST /api/eventos/push
  *
  * Long-poll (~6.5 s): el servidor responde apenas hay un evento (En atención, En sala…).
@@ -57,11 +57,37 @@ function currentPollGapMs() {
 let socketPollTimer = null;
 let pollInFlight = false;
 let pollLoopActive = false;
+/** Cursor de eventos persistidos (MySQL) para no perder avisos entre workers. */
+let pollSinceId = 0;
+let sseSource = null;
+let sseHelloTimer = null;
+let sseFailed = false;
 /** AbortController del long-poll en curso (para reabrir al volver a la pestaña). */
 let pollAbort = null;
 
 /** @type {Record<string, ReturnType<typeof setTimeout>|null>} */
 const _socketRefreshTimers = {};
+const _moduleDirty = Object.create(null);
+
+function markModuleDirty(moduleId) {
+  if (moduleId) _moduleDirty[moduleId] = 1;
+}
+
+function consumeModuleDirty(moduleId) {
+  if (!_moduleDirty[moduleId]) return false;
+  delete _moduleDirty[moduleId];
+  return true;
+}
+
+window.innarMarkModuleDirty = markModuleDirty;
+window.innarConsumeModuleDirty = consumeModuleDirty;
+
+function refreshModuleIfActive(moduleId, fn) {
+  markModuleDirty(moduleId);
+  if (window.currentModule === moduleId && typeof fn === 'function') {
+    scheduleSocketRefresh(moduleId, fn);
+  }
+}
 
 function scheduleSocketRefresh(key, callback, delayMs = 120) {
   if (typeof callback !== 'function') return;
@@ -506,17 +532,14 @@ function registerDefaultRealtimeHandlers() {
   });
 
   subscribe('soportes:pdx-actualizado', () => {
-    if (window.currentModule === 'reportes-pdx' && typeof window.refreshReportesPdx === 'function') {
-      scheduleSocketRefresh('reportes-pdx', () => window.refreshReportesPdx());
-    }
-    if (window.currentModule === 'reportes-historico' && typeof window.refreshReportesHistorico === 'function') {
-      scheduleSocketRefresh('reportes-historico', () => window.refreshReportesHistorico());
-    }
+    refreshModuleIfActive('reportes-pdx', window.refreshReportesPdx);
+    refreshModuleIfActive('reportes-historico', window.refreshReportesHistorico);
   });
   subscribe('soportes:armado-actualizado', () => {
-    if (window.currentModule === 'armado-soportes' && typeof window.refreshArmadoSoportes === 'function') {
-      scheduleSocketRefresh('armado-soportes', () => window.refreshArmadoSoportes());
-    }
+    refreshModuleIfActive('armado-soportes', window.refreshArmadoSoportes);
+  });
+  subscribe('anexo-fidu:actualizado', () => {
+    refreshModuleIfActive('anexo-fidu', window.refreshAnexoFidu);
   });
 
   subscribe('chat:mensaje', () => {
@@ -641,7 +664,10 @@ async function runPollIteration(waitMs = 0) {
   }
   pollAbort = typeof AbortController !== 'undefined' ? new AbortController() : null;
   try {
-    const q = waitMs > 0 ? `?wait=${encodeURIComponent(String(waitMs))}` : '';
+    const params = new URLSearchParams();
+    if (waitMs > 0) params.set('wait', String(waitMs));
+    if (pollSinceId > 0) params.set('since', String(pollSinceId));
+    const q = params.toString() ? `?${params.toString()}` : '';
     const r = await fetch(`/api/eventos/poll${q}`, {
       credentials: 'include',
       cache: 'no-store',
@@ -654,20 +680,80 @@ async function runPollIteration(waitMs = 0) {
     }
     if (!r.ok) return 0;
     const body = await r.json();
-    if (body?.version) applyRemoteVersion(body.version);
-    const events = Array.isArray(body.events) ? body.events : [];
-    if (events.length) noteRealtimeActivity();
-    for (let i = 0; i < events.length; i++) {
-      const row = events[i];
-      if (row?.event) dispatchRealtime(row.event, row.data);
-    }
-    return events.length;
+    ingestRealtimePayload(body);
+    return Array.isArray(body.events) ? body.events.length : 0;
   } catch (e) {
     if (e && e.name === 'AbortError') return 0;
     return 0;
   } finally {
     pollInFlight = false;
   }
+}
+
+function ingestRealtimePayload(body) {
+  if (!body || typeof body !== 'object') return;
+  if (body.version) applyRemoteVersion(body.version);
+  const nextId = Number(body.lastId);
+  if (Number.isFinite(nextId) && nextId > pollSinceId) pollSinceId = nextId;
+  const events = Array.isArray(body.events) ? body.events : [];
+  if (events.length) noteRealtimeActivity();
+  for (let i = 0; i < events.length; i++) {
+    const row = events[i];
+    if (row?.event) dispatchRealtime(row.event, row.data);
+  }
+}
+
+function stopSse() {
+  if (sseHelloTimer) {
+    clearTimeout(sseHelloTimer);
+    sseHelloTimer = null;
+  }
+  if (sseSource) {
+    try { sseSource.close(); } catch (_) { /* noop */ }
+    sseSource = null;
+  }
+}
+
+function startSseStream() {
+  if (!pollLoopActive || sseFailed || typeof EventSource === 'undefined') return false;
+  if (sseSource && sseSource.readyState !== EventSource.CLOSED) return true;
+  stopSse();
+  const params = new URLSearchParams();
+  if (pollSinceId > 0) params.set('since', String(pollSinceId));
+  const url = '/api/eventos/stream' + (params.toString() ? `?${params.toString()}` : '');
+  let gotHello = false;
+  const es = new EventSource(url, { withCredentials: true });
+  sseSource = es;
+  sseHelloTimer = setTimeout(() => {
+    if (gotHello) return;
+    sseFailed = true;
+    stopSse();
+    console.info('Tiempo real: SSE no disponible, usando poll HTTP');
+    void pollLoopTick();
+  }, 5000);
+  es.onmessage = (ev) => {
+    try {
+      const body = JSON.parse(ev.data);
+      gotHello = true;
+      if (sseHelloTimer) {
+        clearTimeout(sseHelloTimer);
+        sseHelloTimer = null;
+      }
+      if (socket) {
+        socket.connected = true;
+        socket.id = 'sse';
+      }
+      ingestRealtimePayload(body);
+    } catch (_) { /* ignore */ }
+  };
+  es.onerror = () => {
+    if (!gotHello) return;
+    if (es.readyState === EventSource.CLOSED && pollLoopActive && !sseFailed) {
+      stopSse();
+      scheduleNextPoll(600);
+    }
+  };
+  return true;
 }
 
 function scheduleNextPoll(delayMs) {
@@ -683,16 +769,22 @@ async function pollLoopTick() {
   if (!pollLoopActive) return;
   const hidden = typeof document !== 'undefined' && document.visibilityState === 'hidden';
 
-  // Pestaña oculta: pausa total (ahorra Hostinger). Al volver, visibilitychange reactiva.
   if (hidden && HIDDEN_POLL_MS <= 0) {
+    stopSse();
     scheduleNextPoll(15000);
     return;
   }
 
   refreshRealtimeLeadership();
   if (!isRealtimeLeader) {
-    // Seguidor: no llama al servidor; espera eventos de la pestaña líder.
+    stopSse();
     scheduleNextPoll(Math.max(1200, Math.min(currentPollGapMs(), 2500)));
+    return;
+  }
+
+  if (!sseFailed && typeof EventSource !== 'undefined') {
+    startSseStream();
+    scheduleNextPoll(4000);
     return;
   }
 
@@ -711,7 +803,7 @@ function initSocket() {
   listeners.clear();
 
   socket = {
-    id: 'http-poll',
+    id: 'sse',
     connected: false,
     on(ev, cb) {
       subscribe(ev, cb);
@@ -734,12 +826,8 @@ function initSocket() {
 
   socket.connected = true;
   pollLoopActive = true;
-  console.info('Tiempo real: HTTP poll adaptativo', {
-    intervalMs: POLL_MS,
-    fastMs: POLL_FAST_MS,
-    burstMs: POLL_BURST_MS,
-    longPollWaitMs: LONG_POLL_WAIT_MS,
-    hiddenIntervalMs: HIDDEN_POLL_MS,
+  console.info('Tiempo real: SSE (canal persistente); poll HTTP como respaldo', {
+    sse: typeof EventSource !== 'undefined',
     leader: isRealtimeLeader,
     tabId: TAB_ID
   });
@@ -760,6 +848,8 @@ function initSocket() {
         if (pollAbort) {
           try { pollAbort.abort(); } catch (_) { /* noop */ }
         }
+        stopSse();
+        sseFailed = false;
         if (socketPollTimer) {
           clearTimeout(socketPollTimer);
           socketPollTimer = null;
@@ -790,6 +880,9 @@ function closeSocket() {
   window.dispatchEvent(new CustomEvent('socketClosed'));
 
   pollLoopActive = false;
+  pollSinceId = 0;
+  sseFailed = false;
+  stopSse();
   releaseRealtimeLeadership();
   if (pollAbort) {
     try { pollAbort.abort(); } catch (_) { /* noop */ }

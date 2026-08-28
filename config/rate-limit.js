@@ -25,7 +25,9 @@ function applyRateLimiters(app) {
     message: { error: 'Demasiadas solicitudes, intenta de nuevo en un minuto' },
     skip: (req) => {
       if (req.path === '/health' || req.path === '/version') return true;
-      if (req.path === '/eventos/poll' || String(req.originalUrl || '').includes('/eventos/poll')) return true;
+      if (req.path === '/eventos/poll' || req.path === '/eventos/stream'
+        || String(req.originalUrl || '').includes('/eventos/poll')
+        || String(req.originalUrl || '').includes('/eventos/stream')) return true;
       return isTrustedIp(trustedIps, req.ip);
     },
     keyGenerator: (req, res) => {
