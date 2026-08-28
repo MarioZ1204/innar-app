@@ -2043,6 +2043,10 @@ function _getScrollSnapshot(el) {
 }
 
 function _restoreScrollSnapshot(snapshot) {
+  if (typeof window.innarRestoreScrollLater === 'function') {
+    window.innarRestoreScrollLater(snapshot);
+    return;
+  }
   if (typeof window.innarRestoreScrollSnapshot === 'function') {
     window.innarRestoreScrollSnapshot(snapshot);
     return;
@@ -2091,7 +2095,7 @@ function renderPaginatedTable(tableId, renderFunction, tbodyId) {
       console.error('[PAGINATION ERROR]', e);
     }
   });
-  requestAnimationFrame(() => _restoreScrollSnapshot(scrollSnapshot));
+  _restoreScrollSnapshot(scrollSnapshot);
 }
 
 /**
@@ -6598,7 +6602,7 @@ async function cargarTurnosMedica() {
     showToast('Error cargando citas', 'error');
   } finally {
     if (scrollSnapMedica) {
-      requestAnimationFrame(() => _restoreScrollSnapshot(scrollSnapMedica));
+      _restoreScrollSnapshot(scrollSnapMedica);
     }
     _cargandoTurnosMedica = false;
     if (_pendienteTurnosMedica) {
@@ -9498,7 +9502,7 @@ async function cargarCitasElectro() {
     showToast('Error cargando citas', 'error'); 
   } finally {
     if (scrollSnapElectro) {
-      requestAnimationFrame(() => _restoreScrollSnapshot(scrollSnapElectro));
+      _restoreScrollSnapshot(scrollSnapElectro);
     }
     _cargandoCitasElectro = false;
     if (_pendienteCitasElectro) {

@@ -3,6 +3,13 @@
   position: relative;
 }
 
+.main-content,
+.sop-arm-main,
+.table-wrapper,
+[data-innar-scroll-root] {
+  overflow-anchor: none;
+}
+
 .innar-scroll-nav {
   position: fixed;
   z-index: 1010;
