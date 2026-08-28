@@ -47,6 +47,7 @@ function sanitizarCallId(val) {
 function sanitizarAnuncioPaciente(data) {
   const d = data && typeof data === 'object' ? data : {};
   const doctorId = parseInt(d.doctor_id, 10);
+  const turnoId = parseInt(d.turno_id, 10);
   const callId = sanitizarCallId(d.call_id);
   const out = {
     paciente_nombre: recortarTextoEvento(d.paciente_nombre, 120),
@@ -54,6 +55,7 @@ function sanitizarAnuncioPaciente(data) {
     doctor_nombre: recortarTextoEvento(d.doctor_nombre, 120),
     doctor_id: Number.isFinite(doctorId) && doctorId > 0 ? doctorId : null
   };
+  if (Number.isFinite(turnoId) && turnoId > 0) out.turno_id = turnoId;
   if (callId) out.call_id = callId;
   return out;
 }

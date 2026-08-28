@@ -1819,6 +1819,16 @@ const runtimeMigrations = [
     }
   },
   {
+    name: 'rt_turnos_llamado_en',
+    description: 'Marca de llamado TV: un paciente EN_SALA solo se anuncia una vez',
+    run: async (db) => {
+      if (!(await tableExists(db, 'turnos'))) return;
+      if (!(await columnExists(db, 'turnos', 'llamado_en'))) {
+        await db.execute('ALTER TABLE turnos ADD COLUMN llamado_en DATETIME NULL DEFAULT NULL');
+      }
+    }
+  },
+  {
     name: 'rt_sop_pdx_papelera',
     description: 'Papelera de archivos eliminados de Cargar Reportes (PDX)',
     run: async (db) => {

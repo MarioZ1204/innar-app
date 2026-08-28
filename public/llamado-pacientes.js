@@ -20,6 +20,7 @@
   const POPUP_EXTRA_MS = 800;
   const MIN_ANUNCIO_VISIBLE_MS = 4500;
   const ENCUELO_DEDUPE_MS = 5000;
+  const CALLS_SESION_KEY = 'innar_llamado_tv_calls_sesion';
   const MEDICOS_REFRESH_MS = 60000;
 
   let initDone = false;
@@ -110,6 +111,8 @@
   }
 
   function enriquecerLlamado(data) {
+    const turnoIdRaw = data?.turno_id;
+    const turnoIdNum = parseInt(turnoIdRaw, 10);
     const item = {
       paciente_nombre: String(data?.paciente_nombre || '').trim(),
       numero_consultorio: data?.numero_consultorio != null && data?.numero_consultorio !== ''
@@ -117,7 +120,8 @@
         : '',
       doctor_id: data?.doctor_id ?? null,
       doctor_nombre: data?.doctor_nombre ? String(data.doctor_nombre).trim() : '',
-      call_id: data?.call_id ? String(data.call_id).trim() : ''
+      call_id: data?.call_id ? String(data.call_id).trim() : '',
+      turno_id: Number.isFinite(turnoIdNum) && turnoIdNum > 0 ? turnoIdNum : null
     };
 
     let med = null;
@@ -200,6 +204,35 @@
   }
 
   window.deactivateLlamadoPacientesTab = desactivarTabLlamado;
+
+  function leerSetSesion(key) {
+    try {
+      const arr = JSON.parse(sessionStorage.getItem(key) || '[]');
+      return new Set((Array.isArray(arr) ? arr : []).map(String).filter(Boolean));
+    } catch (_) {
+      return new Set();
+    }
+  }
+
+  function guardarSetSesion(key, set) {
+    try {
+      sessionStorage.setItem(key, JSON.stringify([...set].slice(-200)));
+    } catch (_) { /* noop */ }
+  }
+
+  const callIdsVistos = leerSetSesion(CALLS_SESION_KEY);
+
+  function llamadoSesionDuplicado(item) {
+    const callId = String(item?.call_id || '').trim();
+    return !!(callId && callIdsVistos.has(callId));
+  }
+
+  function marcarLlamadoSesion(item) {
+    const callId = String(item?.call_id || '').trim();
+    if (!callId || callIdsVistos.has(callId)) return;
+    callIdsVistos.add(callId);
+    guardarSetSesion(CALLS_SESION_KEY, callIdsVistos);
+  }
 
   function llamadoRecienteDuplicadoGlobal(item) {
     const key = claveLlamado(item);
@@ -793,8 +826,10 @@
     const item = normalizarLlamado(data);
     if (!item.paciente_nombre) return false;
     if (!consultorioPermitido(item)) return false;
-    if (llamadoRecienteDuplicado(item)) return 'duplicado';
-    if (llamadoRecienteDuplicadoGlobal(item)) return 'duplicado';
+    if (llamadoSesionDuplicado(item)) return 'duplicado_evento';
+    if (llamadoRecienteDuplicado(item)) return 'duplicado_reciente';
+    if (llamadoRecienteDuplicadoGlobal(item)) return 'duplicado_reciente';
+    marcarLlamadoSesion(item);
 
     batchPendiente.push(item);
     if (batchTimer) clearTimeout(batchTimer);
@@ -814,7 +849,7 @@
       }
       const ok = encolarLlamado(item);
       if (ok === true) emitirAnuncioAck(item, audioUnlocked ? 'reproducido' : 'sin_audio');
-      else if (ok === 'duplicado') emitirAnuncioAck(item, audioUnlocked ? 'reproducido' : 'sin_audio');
+      else if (ok === 'duplicado_evento') emitirAnuncioAck(item, audioUnlocked ? 'reproducido' : 'sin_audio');
       return;
     }
 
@@ -930,7 +965,6 @@
     const attach = () => {
       if (!window.socket || boundRealtime) return;
       window.socket.on('agenda:anunciar-paciente', onLlamadoEvent);
-      window.socket.on('agenda:turno-llamar-siguiente', onLlamadoEvent);
       boundRealtime = true;
     };
     if (window.socketReady && window.socket) attach();

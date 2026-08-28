@@ -630,7 +630,7 @@ function agendaMedicaPolicy(turno, opts = {}) {
       (esDoctorRol && perms.llamarSiguiente) ||
       puedeGestionarComoRecepcion
     ),
-    llamarDisabled: esFinal,
+    llamarDisabled: esFinal || !!(turno && turno.llamado_en),
 
     // EN_ATENCION:
     // - Doctor: solo cuando está EN_SALA
@@ -6988,6 +6988,9 @@ async function llamarSiguientePaciente() {
       if (data.call_id) {
         const ack = await esperarAnuncioTvAck(data.call_id);
         toastResultadoAnuncioTv(nombre, ack);
+        if (ack?.estado === 'reproducido' && data.turno?.id) {
+          await confirmarLlamadoTrasAckTv(data.turno.id, ack);
+        }
       } else {
         showToast('Paciente llamado: ' + nombre, 'success');
       }
@@ -15967,6 +15970,9 @@ function abrirModalEstadoCitaMedica(turno) {
     btnLlamarMod.hidden = !pol.modal.showLlamar;
     btnLlamarMod.disabled = pol.modal.llamarDisabled;
     btnLlamarMod.style.opacity = btnLlamarMod.disabled ? '0.4' : '';
+    btnLlamarMod.title = turno?.llamado_en
+      ? 'Este paciente ya fue llamado'
+      : 'Llamar al paciente';
   }
 
   const btnEnAtencionMod = el('btnModalEnAtencion');
@@ -16163,6 +16169,33 @@ function toastResultadoAnuncioTv(nombrePaciente, ack) {
   showToast('No hay pantalla de llamado activa. Abra el módulo Llamado de pacientes.', 'error');
 }
 
+function aplicarBotonLlamarYaLlamado(llamadoEn) {
+  if (currentTurnoMedicaData) {
+    currentTurnoMedicaData.llamado_en = llamadoEn || currentTurnoMedicaData.llamado_en || true;
+  }
+  const btn = el('btnModalLlamarPaciente');
+  if (!btn) return;
+  btn.disabled = true;
+  btn.style.opacity = '0.4';
+  btn.title = 'Este paciente ya fue llamado';
+}
+
+function restaurarBotonLlamarPendiente() {
+  if (currentTurnoMedicaData?.llamado_en) return;
+  const btn = el('btnModalLlamarPaciente');
+  if (!btn) return;
+  btn.disabled = false;
+  btn.style.opacity = '';
+  btn.title = 'Llamar al paciente';
+}
+
+async function confirmarLlamadoTrasAckTv(turnoId, ack) {
+  if (!turnoId || ack?.estado !== 'reproducido') return false;
+  const res = await apiFetch(`/api/turnos/${turnoId}/llamar/confirmar`, { method: 'POST' });
+  const data = await res.json().catch(() => ({}));
+  return { ok: !!(res.ok && data.ok), llamado_en: data.llamado_en || true };
+}
+
 function bindAnuncioTvAckListener() {
   if (!window.socket) return;
   if (window._anuncioAckBoundSocket === window.socket) return;
@@ -16173,32 +16206,55 @@ function bindAnuncioTvAckListener() {
 document.addEventListener('socketReady', bindAnuncioTvAckListener);
 if (window.socket) bindAnuncioTvAckListener();
 
-// Botón: LLAMAR AL PACIENTE → Emitir anuncio por socket (módulo Llamado de pacientes)
+// Botón: LLAMAR AL PACIENTE → TV anuncia 2 veces; el botón se bloquea solo si la TV confirma audio
 $('btnModalLlamarPaciente')?.addEventListener('click', async (e) => {
   e.preventDefault(); e.stopPropagation();
   if (!currentTurnoMedicaData) return;
-  
-  const nombrePaciente = currentTurnoMedicaData.paciente_nombre || 'el paciente';
-  const doctorIdTurno = currentTurnoMedicaData.doctor_id;
-  const consultorio = obtenerConsultorioMedicoAgenda(doctorIdTurno)
-    || (currentUser?.rol === 'doctor' ? currentUser?.numero_consultorio : null);
-  const doctorNombre = obtenerNombreMedicoAgenda(doctorIdTurno)
-    || (currentUser?.rol === 'doctor' ? currentUser?.nombre : null);
-
-  bindAnuncioTvAckListener();
-  const callId = innarNuevoCallIdAnuncio();
-  const ackPromise = esperarAnuncioTvAck(callId);
-  if (typeof socket !== 'undefined' && socket) {
-    socket.emit('agenda:anunciar-paciente', {
-      call_id: callId,
-      paciente_nombre: nombrePaciente,
-      numero_consultorio: consultorio,
-      doctor_nombre: doctorNombre,
-      doctor_id: doctorIdTurno
-    });
+  if (currentTurnoMedicaData._llamandoLock) return;
+  if (currentTurnoMedicaData.llamado_en) {
+    showToast('Este paciente ya fue llamado', 'warning');
+    return;
   }
-  const ack = await ackPromise;
-  toastResultadoAnuncioTv(nombrePaciente, ack);
+
+  const btn = e.currentTarget;
+  if (btn.disabled) return;
+
+  const nombrePaciente = currentTurnoMedicaData.paciente_nombre || 'el paciente';
+  const turnoId = currentTurnoMedicaData.id;
+  currentTurnoMedicaData._llamandoLock = true;
+  btn.disabled = true;
+  btn.style.opacity = '0.4';
+
+  try {
+    bindAnuncioTvAckListener();
+    const res = await apiFetch(`/api/turnos/${turnoId}/llamar`, { method: 'POST' });
+    const data = await res.json().catch(() => ({}));
+    if (res.status === 409 || data.ya_llamado) {
+      aplicarBotonLlamarYaLlamado(data.llamado_en);
+      showToast(data.error || 'Este paciente ya fue llamado', 'warning');
+      return;
+    }
+    if (!data.ok) {
+      restaurarBotonLlamarPendiente();
+      showToast(data.error || 'Error al llamar', 'error');
+      return;
+    }
+    const ack = await esperarAnuncioTvAck(data.call_id);
+    toastResultadoAnuncioTv(nombrePaciente, ack);
+    if (ack?.estado === 'reproducido') {
+      const conf = await confirmarLlamadoTrasAckTv(turnoId, ack);
+      if (conf && conf.ok) aplicarBotonLlamarYaLlamado(conf.llamado_en);
+      else restaurarBotonLlamarPendiente();
+      return;
+    }
+    restaurarBotonLlamarPendiente();
+  } catch (err) {
+    restaurarBotonLlamarPendiente();
+    showToast('Error al llamar paciente', 'error');
+    console.error(err);
+  } finally {
+    if (currentTurnoMedicaData) currentTurnoMedicaData._llamandoLock = false;
+  }
 });
 
 // Botón: EN ATENCIÓN — equivalente a "Sí, llegó"

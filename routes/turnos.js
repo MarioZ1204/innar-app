@@ -37,6 +37,24 @@ const ESTADOS_VALIDOS_TURNOS = ['PENDIENTE', 'EN_SALA', 'EN_ATENCION', 'ATENDIDO
 
 // Si el rol del usuario es 'doctor', exige que doctorId coincida con la sesión.
 // Otros roles (admin, recepción, electro) no se ven afectados.
+function nuevoCallIdAnuncio() {
+  if (typeof crypto !== 'undefined' && crypto.randomUUID) return crypto.randomUUID();
+  return `c${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
+function payloadAnuncioPaciente(turno, doctor, callId) {
+  return {
+    call_id: callId,
+    turno_id: turno.id,
+    doctor_id: turno.doctor_id,
+    fecha: turno.fecha,
+    paciente_nombre: turno.paciente_nombre,
+    numero_turno: turno.numero_turno,
+    numero_consultorio: doctor?.numero_consultorio || null,
+    doctor_nombre: doctor?.nombre || null
+  };
+}
+
 function denyIfDoctorMismatch(req, doctorId) {
   if (req.session?.rol === 'doctor') {
     const sessionId = parseInt(req.session.usuarioId, 10);
@@ -192,7 +210,8 @@ router.get('/turnos', requireAuth, requirePermiso('agenda.ver'), async (req, res
                 paciente_telefono, paciente_telefono2, estado, fecha, hora, tipo_consulta,
                 entidad, notas, oportunidad, programado_por, creado_en,
                 DATE_FORMAT(reprogramado_fecha, '%Y-%m-%d') AS reprogramado_fecha,
-                TIME_FORMAT(reprogramado_hora, '%H:%i:%s') AS reprogramado_hora`;
+                TIME_FORMAT(reprogramado_hora, '%H:%i:%s') AS reprogramado_hora,
+                DATE_FORMAT(llamado_en, '%Y-%m-%d %H:%i:%s') AS llamado_en`;
 
   if (buscar && !fecha) {
     try {
@@ -431,37 +450,147 @@ router.post('/turnos/llamar-siguiente', requireAuth, requireRoleOrPerm(['superad
     const numeroConsultorio = doctor.length > 0 ? doctor[0].numero_consultorio : null;
     const doctorNombre = doctor.length > 0 ? doctor[0].nombre : null;
 
-    const turnos = await db.query(`
-      SELECT id, numero_turno, doctor_id, paciente_nombre, paciente_documento,
-             paciente_telefono, fecha, hora, estado
-      FROM turnos
-      WHERE fecha = ? AND doctor_id = ? AND estado = 'EN_SALA' AND numero_turno IS NOT NULL
-      ORDER BY numero_turno ASC LIMIT 1
-    `, [fecha, doctor_id]);
+    let turno = null;
+    await db.transaction(async (conn) => {
+      await bloquearTurnosDoctorDia(conn, doctor_id, fecha);
+      const turnos = await conn.query(`
+        SELECT id, numero_turno, doctor_id, paciente_nombre, paciente_documento,
+               paciente_telefono, fecha, hora, estado, llamado_en
+        FROM turnos
+        WHERE fecha = ? AND doctor_id = ? AND estado = 'EN_SALA' AND numero_turno IS NOT NULL
+          AND llamado_en IS NULL
+        ORDER BY numero_turno ASC LIMIT 1
+      `, [fecha, doctor_id]);
+      turno = turnos.length > 0 ? turnos[0] : null;
+    });
 
-    const turno = turnos.length > 0 ? turnos[0] : null;
     if (!turno) {
-      return res.status(404).json({ error: 'No hay más pacientes en espera' });
+      return res.status(404).json({ error: 'No hay más pacientes en espera pendientes de llamar' });
     }
 
     const turnoConConsultorio = { ...turno, numero_consultorio: numeroConsultorio };
+    const callId = nuevoCallIdAnuncio();
+    const payload = payloadAnuncioPaciente(turno, { numero_consultorio: numeroConsultorio, nombre: doctorNombre }, callId);
 
-    const callId = (typeof crypto !== 'undefined' && crypto.randomUUID)
-      ? crypto.randomUUID()
-      : `c${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
-
-    emitSocket('agenda:turno-llamar-siguiente', {
-      turno_id: turno.id,
-      doctor_id,
-      fecha,
-      paciente_nombre: turnoConConsultorio.paciente_nombre,
-      numero_turno: turnoConConsultorio.numero_turno,
-      numero_consultorio: numeroConsultorio,
-      doctor_nombre: doctorNombre,
-      call_id: callId
-    });
+    emitSocket('agenda:anunciar-paciente', payload);
+    emitSocket('agenda:turno-llamar-siguiente', payload);
     res.json({ ok: true, turno: turnoConConsultorio, call_id: callId });
   } catch (e) {
+    logger.error(e.message, { error: e });
+    res.status(500).json({ error: safeError(e) });
+  }
+});
+
+// POST /api/turnos/:id/llamar — emite el anuncio; no marca hasta que la TV confirma
+router.post('/turnos/:id/llamar', requireAuth, requireRoleOrPerm(['superadmin', 'admin', 'admin_recepcion', 'recepcion', 'doctor', 'auxiliar_recepcion'], 'agenda.llamar_siguiente'), async (req, res) => {
+  const id = parseInt(req.params.id, 10);
+  if (!id) {
+    return res.status(400).json({ error: 'ID inválido' });
+  }
+
+  try {
+    const turnos = await db.query(`
+      SELECT id, estado, fecha, doctor_id, paciente_nombre, numero_turno, llamado_en
+      FROM turnos WHERE id = ?
+    `, [id]);
+    const turno = turnos.length > 0 ? turnos[0] : null;
+    if (!turno) {
+      return res.status(404).json({ error: 'Turno no encontrado' });
+    }
+
+    const idorErr = denyIfDoctorMismatch(req, turno.doctor_id);
+    if (idorErr) return res.status(403).json({ error: idorErr });
+
+    if (turno.estado !== 'EN_SALA') {
+      return res.status(400).json({ error: 'Solo se puede llamar un paciente que está en sala' });
+    }
+
+    if (turno.llamado_en) {
+      return res.status(409).json({
+        error: 'Este paciente ya fue llamado',
+        ya_llamado: true,
+        llamado_en: turno.llamado_en
+      });
+    }
+
+    const doctorRows = await db.query(
+      'SELECT numero_consultorio, nombre FROM usuarios WHERE id = ?',
+      [turno.doctor_id]
+    );
+    const doctor = doctorRows.length > 0 ? doctorRows[0] : {};
+    const callId = nuevoCallIdAnuncio();
+    const payload = payloadAnuncioPaciente(turno, doctor, callId);
+    emitSocket('agenda:anunciar-paciente', payload);
+    res.json({
+      ok: true,
+      call_id: callId,
+      turno: {
+        ...turno,
+        numero_consultorio: doctor.numero_consultorio || null
+      }
+    });
+  } catch (e) {
+    if (responderSiHttpError(res, e)) return;
+    logger.error(e.message, { error: e });
+    res.status(500).json({ error: safeError(e) });
+  }
+});
+
+// POST /api/turnos/:id/llamar/confirmar — la TV ya anunció (audio activo)
+router.post('/turnos/:id/llamar/confirmar', requireAuth, requireRoleOrPerm(['superadmin', 'admin', 'admin_recepcion', 'recepcion', 'doctor', 'auxiliar_recepcion'], 'agenda.llamar_siguiente'), async (req, res) => {
+  const id = parseInt(req.params.id, 10);
+  if (!id) {
+    return res.status(400).json({ error: 'ID inválido' });
+  }
+
+  try {
+    const turnos = await db.query(
+      'SELECT id, estado, fecha, doctor_id, llamado_en FROM turnos WHERE id = ?',
+      [id]
+    );
+    const turno = turnos.length > 0 ? turnos[0] : null;
+    if (!turno) {
+      return res.status(404).json({ error: 'Turno no encontrado' });
+    }
+
+    const idorErr = denyIfDoctorMismatch(req, turno.doctor_id);
+    if (idorErr) return res.status(403).json({ error: idorErr });
+
+    if (turno.estado !== 'EN_SALA') {
+      return res.status(400).json({ error: 'Solo se puede confirmar el llamado de un paciente en sala' });
+    }
+
+    if (turno.llamado_en) {
+      return res.json({ ok: true, ya_llamado: true, llamado_en: turno.llamado_en });
+    }
+
+    let llamadoEn = null;
+    await db.transaction(async (conn) => {
+      await bloquearTurnosDoctorDia(conn, turno.doctor_id, ymdTurno(turno.fecha));
+      const freshRows = await conn.query(
+        'SELECT id, estado, llamado_en FROM turnos WHERE id = ?',
+        [id]
+      );
+      const fresh = freshRows.length > 0 ? freshRows[0] : null;
+      if (!fresh) throw httpError(404, 'Turno no encontrado');
+      if (fresh.estado !== 'EN_SALA') {
+        throw httpError(400, 'Solo se puede confirmar el llamado de un paciente en sala');
+      }
+      if (fresh.llamado_en) {
+        llamadoEn = fresh.llamado_en;
+        return;
+      }
+      await conn.execute('UPDATE turnos SET llamado_en = NOW() WHERE id = ? AND llamado_en IS NULL', [id]);
+      const marked = await conn.query(
+        `SELECT DATE_FORMAT(llamado_en, '%Y-%m-%d %H:%i:%s') AS llamado_en FROM turnos WHERE id = ?`,
+        [id]
+      );
+      llamadoEn = marked.length > 0 ? marked[0].llamado_en : true;
+    });
+
+    res.json({ ok: true, llamado_en: llamadoEn });
+  } catch (e) {
+    if (responderSiHttpError(res, e)) return;
     logger.error(e.message, { error: e });
     res.status(500).json({ error: safeError(e) });
   }
@@ -1106,7 +1235,10 @@ router.patch('/turnos/:id/estado', requireAuth, requireRoleOrPerm(['superadmin',
         `, [fechaDia, turno.doctor_id]);
         const maxNum = result[0]?.max_num || 0;
         numeroAsignado = maxNum + 1;
-        await conn.execute('UPDATE turnos SET estado = ?, numero_turno = ? WHERE id = ?', [estado, numeroAsignado, id]);
+        await conn.execute(
+          'UPDATE turnos SET estado = ?, numero_turno = ?, llamado_en = NULL WHERE id = ?',
+          [estado, numeroAsignado, id]
+        );
       } else if (esFinal) {
         if (estado === 'REPROGRAMADO') {
           await conn.execute(
@@ -1123,6 +1255,8 @@ router.patch('/turnos/:id/estado', requireAuth, requireRoleOrPerm(['superadmin',
         for (let i = 0; i < enSalaList.length; i++) {
           await conn.execute('UPDATE turnos SET numero_turno = ? WHERE id = ?', [i + 1, enSalaList[i].id]);
         }
+      } else if (estado === 'EN_SALA') {
+        await conn.execute('UPDATE turnos SET estado = ?, llamado_en = NULL WHERE id = ?', [estado, id]);
       } else {
         await conn.execute('UPDATE turnos SET estado = ? WHERE id = ?', [estado, id]);
       }
