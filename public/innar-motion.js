@@ -77,6 +77,33 @@
     window.setTimeout(() => viewEl.classList.remove('innar-view-enter'), VIEW_IN_MS);
   };
 
+  /** True if the container already shows real UI (not an empty/skeleton placeholder). */
+  window.innarHasPaintedContent = function innarHasPaintedContent(el) {
+    if (!el) return false;
+    if (el.querySelector('.electro-cita-card, .sop-folder-card, .sop-nav-item, .turno-row')) return true;
+    if (el.tagName === 'TBODY') {
+      if (el.querySelector('tr.skeleton-row, tr.sop-skeleton-table-row')) return false;
+      const rows = el.querySelectorAll('tr');
+      if (!rows.length) return false;
+      const text = String(el.textContent || '').replace(/\s+/g, ' ').trim();
+      if (!text || /^Cargando/i.test(text)) return false;
+      return true;
+    }
+    const kids = el.children;
+    if (!kids.length) return false;
+    for (let i = 0; i < kids.length; i++) {
+      const k = kids[i];
+      if (
+        k.classList.contains('sop-skeleton-grid') ||
+        k.classList.contains('sop-skeleton-block') ||
+        k.classList.contains('sop-skeleton-nav-item') ||
+        k.classList.contains('skeleton-row')
+      ) continue;
+      return true;
+    }
+    return false;
+  };
+
   window.innarHighlightTurnoRow = function innarHighlightTurnoRow(turnoId) {
     if (!turnoId || document.documentElement.classList.contains('innar-motion-off')) return;
     const idStr = String(turnoId).replace(/\\/g, '\\\\').replace(/"/g, '\\"');

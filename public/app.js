@@ -360,6 +360,7 @@ let _medicaUltimaKeyAgenda = null;
 let _cargandoCitasElectro = false;
 let _pendienteCitasElectro = false;
 let _citasElectroReqId = 0;
+let _citasElectroLastFecha = null;
 
 function normalizarTextoBase(str) {
   return (str || '')
@@ -825,6 +826,8 @@ function _innarFlushTurnoHighlight() {
 }
 
 function showView(id) {
+  const target = document.getElementById(id);
+  const skipMotion = !!(target && target.dataset.innarVisited === '1');
   const apply = () => {
     document.querySelectorAll('[id^="view-"]').forEach((v) => {
       if (v.id === id) return;
@@ -832,24 +835,31 @@ function showView(id) {
       v.classList.add('hidden');
     });
     const el = document.getElementById(id);
-    if (el) el.classList.remove('hidden');
+    if (el) {
+      el.classList.remove('hidden');
+      el.dataset.innarVisited = '1';
+    }
     if (typeof window.innarSidebarRefresh === 'function') window.innarSidebarRefresh();
   };
-  let usedViewTransition = false;
-  if (typeof window.innarRunViewSwitch === 'function') {
-    try {
-      usedViewTransition = window.innarRunViewSwitch(apply);
-    } catch (e) {
-      console.warn('[showView] View transition falló, aplicando vista directa:', e);
+  if (skipMotion) {
+    apply();
+  } else {
+    let usedViewTransition = false;
+    if (typeof window.innarRunViewSwitch === 'function') {
+      try {
+        usedViewTransition = window.innarRunViewSwitch(apply);
+      } catch (e) {
+        console.warn('[showView] View transition falló, aplicando vista directa:', e);
+        apply();
+      }
+    } else {
       apply();
     }
-  } else {
-    apply();
-  }
-  if (!usedViewTransition) {
-    const el = document.getElementById(id);
-    if (el && typeof window.innarAnimateViewIn === 'function') window.innarAnimateViewIn(el);
-    else if (el) el.classList.add('innar-view-enter');
+    if (!usedViewTransition) {
+      const el = document.getElementById(id);
+      if (el && typeof window.innarAnimateViewIn === 'function') window.innarAnimateViewIn(el);
+      else if (el) el.classList.add('innar-view-enter');
+    }
   }
   const viewEl = document.getElementById(id);
   if (viewEl && typeof window.innarScrollNav?.observeView === 'function') {
@@ -1060,6 +1070,7 @@ async function doLogout() {
   sessionStorage.removeItem(lsKeySelectedDoctor);
   currentModule = null;
   window.currentModule = null;
+  document.querySelectorAll('[id^="view-"]').forEach((v) => { delete v.dataset.innarVisited; });
   _hideAudioStatusBtn();
   showView('view-login');
   history.pushState({view: 'login'}, '', '#login');
@@ -1089,12 +1100,13 @@ function goToModule(moduleId) {
   if (moduleId === 'recibos') {
     if (!initRecibosDone) initRecibos();
     else {
-      cargarLista(_recibosLastParams || '');
+      const tbody = document.getElementById('savedItems');
+      const keep = typeof window.innarHasPaintedContent === 'function' && window.innarHasPaintedContent(tbody);
+      if (!keep) cargarLista(_recibosLastParams || '');
       if (_recibosFiltrosUI) restaurarEstadoFiltrosRecibosUI(_recibosFiltrosUI);
     }
-    recargarSelectsEntidadModulo('recibos', { force: true });
-    if ($('filtroEntidad')) cargarFiltrosOpciones({ force: true });
-    if ($('filtroEspecialidad')) cargarFiltrosEspecialidades();
+    recargarSelectsEntidadModulo('recibos', { force: false });
+    if ($('filtroEntidad')) cargarFiltrosOpciones({ force: false });
     if (typeof updateSavedCount === 'function') updateSavedCount();
   }
   if (moduleId === 'agenda-medica') { 
@@ -1102,23 +1114,11 @@ function goToModule(moduleId) {
       initAgendaMedica();
       initAgendaDone = true;
     } else {
-      // Al reingresar al módulo, refrescar contra el doctor actualmente seleccionado
-      // y volver a la subvista principal de citas.
-      document.querySelectorAll('.agenda-page-btn').forEach(b => b.classList.remove('active'));
-      const citasBtn = document.querySelector('.agenda-page-btn[data-page="citas"]');
-      if (citasBtn) citasBtn.classList.add('active');
-      document.querySelectorAll('.agenda-page').forEach(p => p.classList.remove('active'));
-      const citasPage = document.querySelector('.agenda-page[data-agenda-page="citas"]');
-      if (citasPage) citasPage.classList.add('active');
-      const progSection = $('agendaProgramarSection');
-      if (progSection) progSection.style.display = 'none';
       if (typeof calDoctorIdForCal !== 'undefined') {
         calDoctorIdForCal = selectedDoctorId || currentUser?.id || null;
       }
-      if (typeof loadCalendarData === 'function' && (selectedDoctorId || currentUser?.id)) loadCalendarData();
       if (typeof cargarTurnosMedica === 'function') cargarTurnosMedica();
-      if (typeof actualizarHorasDisponibles === 'function') actualizarHorasDisponibles();
-      recargarSelectsEntidadModulo('agenda-medica', { force: true });
+      recargarSelectsEntidadModulo('agenda-medica', { force: false });
     }
     startAgendaMedicaAutoRefresh();
   } else {
@@ -1126,20 +1126,16 @@ function goToModule(moduleId) {
   }
   if (moduleId === 'electro') {
     if (!initElectroDone) { initElectro(); initElectroDone = true; }
-    else recargarSelectsEntidadModulo('electro', { force: true });
+    else recargarSelectsEntidadModulo('electro', { force: false });
   }
   if (moduleId === 'usuarios') { if (!initUsuariosDone) initUsuarios(); initUsuariosDone = true; }
   if (moduleId === 'diagnosticos') { if (!initDiagnosticosDone) initDiagnosticos(); initDiagnosticosDone = true; }
   if (moduleId === 'dashboard-citas') {
     if (!initDashboardCitasDone) initDashboardCitas();
-    else if (typeof cargarEntidadesFiltroAuditoria === 'function') {
-      cargarEntidadesFiltroAuditoria({ force: true });
-    }
     initDashboardCitasDone = true;
   }
   if (moduleId === 'gestion-datos') {
     if (!initGestionDatosDone) initGestionDatos();
-    else if (typeof scheduleBuscarGestionDatos === 'function') scheduleBuscarGestionDatos(0);
     initGestionDatosDone = true;
   }
   if (moduleId === 'monitor-equipos') { initMonitorEquipos(); }
@@ -1167,27 +1163,6 @@ function goToMenu() {
   window.currentModule = null;  // Limpiar para sockets
   sessionStorage.removeItem(lsKeyCurrentModule);
   stopAgendaMedicaAutoRefresh();
-  // Resetear flags de inicialización para permitir reinicialización
-  initAgendaDone = false;
-  window.socketAgendaMedicaListenerAdded = false;
-  initElectroDone = false;
-  initDashboardCitasDone = false;
-  // initRecibosDone: NO resetear — initRecibos usa addEventListener (acumularía duplicados)
-  // el módulo recibos maneja refresh via el branch `else cargarLista()` en goToModule
-  initUsuariosDone = false;
-  initDiagnosticosDone = false;
-  // initGestionDatosDone: NO resetear — initGestionDatos usa addEventListener (acumularía duplicados)
-  // el módulo gestión-datos refresca vía scheduleBuscarGestionDatos en goToModule
-  // Resetear calendario de citas integrado
-  if (typeof _citasCalIniciado !== 'undefined') _citasCalIniciado = false;
-  // Resetear caché de catálogos para recargar al volver a entrar
-  invalidarCacheEntidades();
-  invalidarCacheEstudios();
-  // Resetear flag de listeners de socket-electro
-  window.listenersConfigured = false;
-  // Limpiar selectedDoctorId cuando se vuelve al menú
-  selectedDoctorId = null;
-  sessionStorage.removeItem(lsKeySelectedDoctor);
   history.pushState({view: 'menu'}, '', '#menu');
   updateFacturacionFlowNav(null);
 }
@@ -1281,6 +1256,7 @@ function setupMenuHandlers() {
   document.querySelectorAll('#view-recibos .sidebar-btn').forEach(btn => {
     btn.addEventListener('click', function() {
       const page = this.dataset.page;
+      if (this.classList.contains('active')) return;
       document.querySelectorAll('#view-recibos .sidebar-btn').forEach(b => b.classList.remove('active'));
       this.classList.add('active');
       document.querySelectorAll('#view-recibos .page').forEach(p => p.classList.remove('active'));
@@ -2671,6 +2647,7 @@ function showPrompt(msg, onOk, { okText = 'Confirmar', cancelText = 'Cancelar', 
 // ========== SKELETON ROWS ==========
 function showSkeletonRows(tbody, cols, count = 5) {
   if (!tbody) return;
+  if (typeof window.innarHasPaintedContent === 'function' && window.innarHasPaintedContent(tbody)) return;
   tbody.innerHTML = Array.from({ length: count }, (_, r) =>
     `<tr class="skeleton-row">${Array.from({ length: cols }, (_, i) =>
       `<td><div class="skeleton-cell" style="width:${55 + ((r + i * 3) % 4) * 10}%"></div></td>`
@@ -4357,7 +4334,15 @@ const ELECTRO_KANBAN_BODY_IDS = [
   'citasElectroBodyEegPendientes', 'citasElectroBodyEegActivos', 'citasElectroBodyEegCompletados'
 ];
 
-function showElectroKanbanLoading() {
+function electroKanbanHasCards() {
+  return ELECTRO_KANBAN_BODY_IDS.some((id) => {
+    const el = typeof $ === 'function' ? $(id) : document.getElementById(id);
+    return !!(el && el.querySelector('.electro-cita-card'));
+  });
+}
+
+function showElectroKanbanLoading(force = false) {
+  if (!force && electroKanbanHasCards()) return;
   const loadingHtml = htmlListaVacia('Cargando\u2026');
   ELECTRO_KANBAN_BODY_IDS.forEach((id) => {
     const el = typeof $ === 'function' ? $(id) : document.getElementById(id);
@@ -4366,6 +4351,7 @@ function showElectroKanbanLoading() {
 }
 
 function renderCitasElectroKanban(citas) {
+  const hadCards = electroKanbanHasCards();
   const boards = {
     psg: {
       pendientes: $('citasElectroBodyPsgPendientes'),
@@ -4409,7 +4395,7 @@ function renderCitasElectroKanban(citas) {
   setCount('electroKanbanCountEegPendientes', counts.eeg.pendientes);
   setCount('electroKanbanCountEegActivos', counts.eeg.activos);
   setCount('electroKanbanCountEegCompletados', counts.eeg.completados);
-  const skipKanbanEnter = _innarSkipNextKanbanEnter;
+  const skipKanbanEnter = _innarSkipNextKanbanEnter || hadCards;
   _innarSkipNextKanbanEnter = false;
   if (!skipKanbanEnter && typeof window.innarAnimateKanbanCards === 'function') {
     requestAnimationFrame(() => window.innarAnimateKanbanCards(document.getElementById('electroKanbanBoard')));
@@ -4572,27 +4558,19 @@ async function initAgendaMedica() {
   document.querySelectorAll('.agenda-page-btn').forEach(btn => {
     btn.addEventListener('click', function() {
       const page = this.dataset.page;
-      // marcar botón como activo
+      if (this.classList.contains('active')) return;
       document.querySelectorAll('.agenda-page-btn').forEach(b => b.classList.remove('active'));
       this.classList.add('active');
-      // cambiar página visible
       document.querySelectorAll('.agenda-page').forEach(p => p.classList.remove('active'));
       const pgEl = document.querySelector(`.agenda-page[data-agenda-page="${page}"]`);
       if (pgEl) pgEl.classList.add('active');
       
-      // mostrar/ocultar secciones dentro de página según rol
-      if (page === 'citas') {
-        // Recargar calendario al volver a la pestaña de citas
-        if (typeof cargarCitasCalendario === 'function') cargarCitasCalendario();
-      } else if (page === 'programar') {
+      if (page === 'programar') {
         const titleHeader = document.getElementById('agendaTitleHeader');
         if (titleHeader) titleHeader.textContent = currentUser?.rol === 'doctor' ? 'Programar Agenda' : 'Agenda';
-        // Show PDF download section for roles that can upload
         const progSection = $('agendaProgramarSection');
         const canUpload = tienePermiso('agenda.crear');
         if (progSection) progSection.style.display = canUpload ? '' : 'none';
-        // Reload calendar data when switching to this tab
-        if (typeof loadCalendarData === 'function') loadCalendarData();
       }
     });
   });
@@ -8786,12 +8764,18 @@ async function initElectro() {
   document.querySelectorAll('#view-electro .electro-page-btn').forEach(btn => {
     btn.addEventListener('click', function() {
       const page = this.dataset.page;
+      if (this.classList.contains('active')) return;
       document.querySelectorAll('#view-electro .electro-page-btn').forEach(b => b.classList.remove('active'));
       this.classList.add('active');
       document.querySelectorAll('#view-electro .electro-page').forEach(p => p.classList.remove('active'));
       const pgEl = document.querySelector(`#view-electro .electro-page[data-electro-page="${page}"]`);
       if (pgEl) pgEl.classList.add('active');
-      if (page === 'espera') cargarEsperaElectro();
+      if (page === 'espera') {
+        const tb = $('esperaTableBody');
+        if (!(typeof window.innarHasPaintedContent === 'function' && window.innarHasPaintedContent(tb))) {
+          cargarEsperaElectro();
+        }
+      }
     });
   });
 
@@ -9439,8 +9423,13 @@ async function cargarCitasElectro() {
     showToast('Selecciona una fecha', 'error');
     return;
   }
-  if (typeof window.innarMotionPause === 'function') window.innarMotionPause(420);
-  showElectroKanbanLoading();
+  const keepKanban = fecha === _citasElectroLastFecha && electroKanbanHasCards();
+  if (keepKanban) {
+    innarSkipKanbanEnterOnce();
+  } else {
+    if (typeof window.innarMotionPause === 'function') window.innarMotionPause(420);
+    showElectroKanbanLoading(true);
+  }
   try {
     const res = await apiFetch(`/api/citas-electro?fecha=${encodeURIComponent(fecha)}&_t=${Date.now()}`, {
       cache: 'no-store'
@@ -9464,6 +9453,7 @@ async function cargarCitasElectro() {
     }
     window._citasElectroAllData = citasActivas;
     window._citasElectroKanbanData = citasFiltradas;
+    _citasElectroLastFecha = fecha;
     
     if (citasFiltradas.length === 0) {
       renderCitasElectroKanban([]);
@@ -10691,6 +10681,7 @@ async function initUsuarios() {
   document.querySelectorAll('#view-usuarios .usuarios-page-btn').forEach(btn => {
     btn.addEventListener('click', function() {
       const page = this.dataset.page;
+      if (this.classList.contains('active')) return;
       document.querySelectorAll('#view-usuarios .usuarios-page-btn').forEach(b => b.classList.remove('active'));
       this.classList.add('active');
       document.querySelectorAll('#view-usuarios .usuarios-page').forEach(p => p.classList.remove('active'));
@@ -17245,7 +17236,13 @@ async function cargarOpcionesEspecialidad(selectId) {
 }
 
 function initEspecialidades() {
-  if (_especialidadesInitialized) { cargarEspecialidades(); return; }
+  if (_especialidadesInitialized) {
+    const tb = $('especialidadesTableBody');
+    if (!(typeof window.innarHasPaintedContent === 'function' && window.innarHasPaintedContent(tb))) {
+      cargarEspecialidades();
+    }
+    return;
+  }
   _especialidadesInitialized = true;
 
   $('btnCrearEspecialidad')?.addEventListener('click', crearEspecialidad);
@@ -17694,15 +17691,13 @@ function _gestionActualizarFiltros() {
 }
 
 function initGestionDatos() {
-  if (_gestionHandlersSetup) {
-    scheduleBuscarGestionDatos(0);
-    return;
-  }
+  if (_gestionHandlersSetup) return;
   _gestionHandlersSetup = true;
 
   // Sidebar: cambio de tab
   document.querySelectorAll('#view-gestion-datos [data-gestion-tab]').forEach(btn => {
     btn.addEventListener('click', () => {
+      if (btn.classList.contains('active')) return;
       document.querySelectorAll('#view-gestion-datos [data-gestion-tab]').forEach(b => b.classList.remove('active'));
       btn.classList.add('active');
       _gestionTipoActual = btn.dataset.gestionTab;
@@ -18293,7 +18288,7 @@ function _monitorSyncDateUI() {
 }
 
 function initMonitorEquipos() {
-  if (initMonitorEquiposDone) { cargarMonitorEquipos(); return; }
+  if (initMonitorEquiposDone) return;
   initMonitorEquiposDone = true;
 
   $('btnVolverMonitorEquipos')?.addEventListener('click', goToMenu);

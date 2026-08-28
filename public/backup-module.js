@@ -42,7 +42,9 @@
     if (!tbody) return;
     const anchor = tbody || document.getElementById('view-backup');
     const load = async () => {
-    tbody.innerHTML = '<tr><td colspan="5"><div class="innar-empty innar-empty--compact"><p class="innar-empty-title">Cargando…</p></div></td></tr>';
+    if (!(typeof window.innarHasPaintedContent === 'function' && window.innarHasPaintedContent(tbody))) {
+      tbody.innerHTML = '<tr><td colspan="5"><div class="innar-empty innar-empty--compact"><p class="innar-empty-title">Cargando…</p></div></td></tr>';
+    }
     try {
       const res = await apiFetch('/api/backups');
       const ct = (res.headers.get('Content-Type') || '').toLowerCase();
@@ -164,6 +166,8 @@
       btnRefresh.dataset.bound = '1';
       btnRefresh.addEventListener('click', cargarListaBackups);
     }
+    const tbody = document.getElementById('backupTablaBody');
+    if (typeof window.innarHasPaintedContent === 'function' && window.innarHasPaintedContent(tbody)) return;
     cargarListaBackups();
   }
 
