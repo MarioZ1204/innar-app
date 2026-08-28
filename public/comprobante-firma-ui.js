@@ -156,10 +156,13 @@
     };
 
     state.validar = () => {
-      if (!state.firmaPaciente) {
-        return 'Debe cargar la firma del paciente (imagen)';
+      const acudChecked = !!$(ids.chkAcud)?.checked;
+      const hasAcud = acudChecked && !!state.firmaAcudiente;
+      if (hasAcud || state.firmaPaciente) return null;
+      if (acudChecked) {
+        return 'Cargue la firma del acudiente. La del paciente es opcional.';
       }
-      return null;
+      return 'Debe cargar la firma del paciente (imagen)';
     };
 
     state.buildPayloadExtras = async () => {
