@@ -174,8 +174,22 @@
     return getScrollSnapshot(base?.container || document.body);
   }
 
+  function snapshotTop(s) {
+    if (!s) return 0;
+    if (s.container && !s.useWindow) return s.top;
+    return s.winY || 0;
+  }
+
+  /** Si el usuario ya está en otro sitio (no un reset a 0), no devolver el scroll. */
+  function userHasMovedAway(snapshot) {
+    const liveTop = snapshotTop(liveSnapshotFrom(snapshot));
+    const snapTop = snapshotTop(snapshot);
+    return liveTop >= 24 && Math.abs(liveTop - snapTop) > 8;
+  }
+
   function restoreScrollSnapshot(snapshot) {
     if (!snapshot) return;
+    if (userHasMovedAway(snapshot)) return;
     _innarRestoringScroll += 1;
     try {
       if (snapshot.container && snapshot.container.isConnected) {
@@ -255,10 +269,14 @@
     } finally {
       scrollEl.removeEventListener('scroll', onScroll);
       if (snap.container) window.removeEventListener('scroll', onScroll);
-      const destEl = desired.container ? desired.top : desired.winY;
-      const userMoved = Math.abs(destEl - originEl) > 8 || Math.abs(desired.winY - originWin) > 8;
-      if (userMoved) restoreScrollSnapshot(desired);
-      else restoreScrollLater(snap);
+      const destEl = snapshotTop(desired);
+      const liveTop = snapshotTop(liveSnapshotFrom(desired));
+      const userMoved = Math.abs(destEl - originEl) > 8 || Math.abs((desired.winY || 0) - originWin) > 8;
+      if (userMoved) {
+        if (liveTop < 16) restoreScrollSnapshot(desired);
+      } else if (originEl > 16 && liveTop < 16) {
+        restoreScrollLater(snap);
+      }
     }
   }
 

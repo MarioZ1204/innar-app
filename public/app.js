@@ -1117,7 +1117,12 @@ function goToModule(moduleId) {
       if (typeof calDoctorIdForCal !== 'undefined') {
         calDoctorIdForCal = selectedDoctorId || currentUser?.id || null;
       }
-      if (typeof cargarTurnosMedica === 'function') cargarTurnosMedica();
+      const fechaAgenda = $('agendaMedicaFecha')?.value;
+      const doctorAgenda = selectedDoctorId || (currentUser?.rol === 'doctor' ? currentUser?.id : null);
+      const keyAgenda = `${fechaAgenda || ''}|${doctorAgenda || ''}`;
+      if (typeof _medicaUltimaKeyAgenda !== 'undefined' && keyAgenda !== _medicaUltimaKeyAgenda) {
+        if (typeof cargarTurnosMedica === 'function') cargarTurnosMedica();
+      }
       recargarSelectsEntidadModulo('agenda-medica', { force: false });
     }
     startAgendaMedicaAutoRefresh();
