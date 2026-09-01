@@ -15179,11 +15179,16 @@ function mostrarModalSedeRecordatorio(turno) {
 
   if (!modal.dataset.sedeOverlayBound) {
     modal.dataset.sedeOverlayBound = '1';
-    modal.addEventListener('click', (e) => {
-      if (e.target === modal) cerrarModalSedeRecordatorio();
-    });
-    const dialog = modal.querySelector('.sede-recordatorio-dialog');
-    if (dialog) dialog.addEventListener('click', (e) => e.stopPropagation());
+    if (typeof window.bindBackdropDismiss === 'function') {
+      window.bindBackdropDismiss(modal, cerrarModalSedeRecordatorio);
+    } else {
+      let downOnModal = false;
+      modal.addEventListener('pointerdown', (e) => { downOnModal = e.target === modal; });
+      modal.addEventListener('click', (e) => {
+        if (e.target === modal && downOnModal) cerrarModalSedeRecordatorio();
+        downOnModal = false;
+      });
+    }
   }
 
   if (modal.parentElement !== document.body) {

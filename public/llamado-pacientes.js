@@ -1028,7 +1028,14 @@
       viewLlamado?.addEventListener('click', unlockAudio, { once: true });
       $('btnLlamadoConfig')?.addEventListener('click', abrirConfig);
       $('btnLlamadoConfigCerrar')?.addEventListener('click', cerrarConfig);
-      $('llamadoConfigBackdrop')?.addEventListener('click', cerrarConfig);
+      const llamadoBd = $('llamadoConfigBackdrop');
+      if (llamadoBd) {
+        if (typeof window.bindBackdropDismiss === 'function') {
+          window.bindBackdropDismiss(llamadoBd, cerrarConfig);
+        } else {
+          llamadoBd.addEventListener('click', cerrarConfig);
+        }
+      }
       $('btnLlamadoConfigTodos')?.addEventListener('click', activarTodosConsultorios);
       $('btnLlamadoConfigNinguno')?.addEventListener('click', bloquearTodosConsultorios);
       $('btnLlamadoFullscreen')?.addEventListener('click', toggleFullscreen);
