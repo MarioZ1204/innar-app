@@ -9,6 +9,9 @@
   let _total = 0;
   let _limit = 50;
   let _celdaEditando = null;
+  let _afiduGuardandoFila = false;
+  let afiduRefreshPendiente = false;
+  let afiduRefreshOpts = null;
   let _pendingCodigo = '';
   let _pendingBulkPairs = null;
   let _carpetaId = null;
@@ -1139,12 +1142,116 @@
     }
   }
 
+  function afiduMarkRefreshPendiente(opts) {
+    afiduRefreshPendiente = true;
+    afiduRefreshOpts = opts && typeof opts === 'object' ? { ...opts, soft: true } : { soft: true };
+  }
+
+  function afiduFlushRefreshPendiente() {
+    if (!afiduRefreshPendiente) return;
+    if (_celdaEditando || _afiduGuardandoFila) return;
+    afiduRefreshPendiente = false;
+    const opts = afiduRefreshOpts || { soft: true };
+    afiduRefreshOpts = null;
+    refrescarVistaAfiduActual(opts).catch(() => {});
+  }
+
+  function afiduArchivoIdFromRealtime(opts) {
+    if (!opts || typeof opts !== 'object') return null;
+    const direct = parseInt(opts.archivoId || opts.archivo_id, 10);
+    if (Number.isFinite(direct) && direct > 0) return direct;
+    const m = String(opts.path || '').match(/\/anexo-fidu\/archivos\/(\d+)/i);
+    if (m) {
+      const id = parseInt(m[1], 10);
+      if (Number.isFinite(id) && id > 0) return id;
+    }
+    return null;
+  }
+
+  function afiduCarpetaIdFromRealtime(opts) {
+    if (!opts || typeof opts !== 'object') return null;
+    const direct = parseInt(opts.carpetaId || opts.carpeta_id, 10);
+    if (Number.isFinite(direct) && direct > 0) return direct;
+    const m = String(opts.path || '').match(/\/anexo-fidu\/carpetas\/(\d+)/i);
+    if (m) {
+      const id = parseInt(m[1], 10);
+      if (Number.isFinite(id) && id > 0) return id;
+    }
+    return null;
+  }
+
+  function afiduWithScroll(fn) {
+    const anchor = $('afiduArchivoWorkspace') || $('afiduMainPanel') || $('view-anexo-fidu');
+    if (typeof window.innarPreserveScroll === 'function' && anchor) {
+      return window.innarPreserveScroll(anchor, fn);
+    }
+    return fn();
+  }
+
+  function afiduSnapshotEdicion() {
+    if (!_celdaEditando) return null;
+    const { tr, key, valorOriginal, input } = _celdaEditando;
+    const el = input;
+    let selStart = null;
+    let selEnd = null;
+    try {
+      if (el && typeof el.selectionStart === 'number') {
+        selStart = el.selectionStart;
+        selEnd = el.selectionEnd;
+      }
+    } catch (_) { /* select/input sin rango */ }
+    return {
+      registroId: tr?.dataset?.id ? String(tr.dataset.id) : null,
+      isNew: tr?.dataset?.new === '1',
+      key,
+      valorOriginal,
+      draft: el ? String(el.value ?? '') : '',
+      selStart,
+      selEnd
+    };
+  }
+
+  function afiduRestaurarEdicion(snap) {
+    if (!snap?.key) return;
+    const tbody = $('afiduGridBody');
+    if (!tbody) return;
+    let tr = null;
+    if (snap.registroId) {
+      const id = String(snap.registroId).replace(/"/g, '');
+      tr = tbody.querySelector(`tr.afidu-row[data-id="${id}"]`);
+    } else if (snap.isNew) {
+      tr = tbody.querySelector('tr.afidu-row[data-new="1"]');
+    }
+    if (!tr) return;
+    const td = tr.querySelector(`.afidu-cell[data-key="${snap.key}"]`);
+    if (!td) return;
+    _celdaEditando = null;
+    iniciarEdicionCelda(td);
+    if (!_celdaEditando?.input) return;
+    _celdaEditando.valorOriginal = snap.valorOriginal;
+    _celdaEditando.input.value = snap.draft;
+    try {
+      if (
+        typeof _celdaEditando.input.setSelectionRange === 'function'
+        && snap.selStart != null
+        && _celdaEditando.input.tagName !== 'SELECT'
+      ) {
+        const max = String(_celdaEditando.input.value || '').length;
+        const a = Math.max(0, Math.min(snap.selStart, max));
+        const b = Math.max(0, Math.min(snap.selEnd != null ? snap.selEnd : a, max));
+        _celdaEditando.input.setSelectionRange(a, b);
+      }
+    } catch (_) { /* ignore */ }
+    _celdaEditando.input.focus();
+  }
+
   function cancelarEdicionCelda() {
     if (!_celdaEditando) return;
     const { td, valorOriginal } = _celdaEditando;
     td.classList.remove('afidu-cell-editing');
     td.innerHTML = `<span class="afidu-cell-text">${valorCeldaTexto(valorOriginal)}</span>`;
     _celdaEditando = null;
+    afiduFlushRefreshPendiente();
   }
 
   function iniciarEdicionCelda(td) {
@@ -1229,8 +1336,12 @@
     td.classList.remove('afidu-cell-editing');
     td.innerHTML = `<span class="afidu-cell-text">${valorCeldaTexto(nuevoValor)}</span>`;
 
-    if (!guardar || nuevoValor === valorOriginal) return;
+    if (!guardar || nuevoValor === valorOriginal) {
+      afiduFlushRefreshPendiente();
+      return;
+    }
 
+    _afiduGuardandoFila = true;
     tr.classList.add('afidu-row-saving');
     try {
       if (key === 'codigo_servicio' || key === 'numero_documento') {
@@ -1255,6 +1366,8 @@
       if (typeof showToast === 'function') showToast(e.message, 'error');
     } finally {
       tr.classList.remove('afidu-row-saving');
+      _afiduGuardandoFila = false;
+      afiduFlushRefreshPendiente();
     }
   }
 
@@ -1950,8 +2063,16 @@
     await agregarFilasDesdeEntrada(pairs, { limpiarBulk: true, bulkContinuar: true });
   }
 
-  async function cargarRegistros() {
-    cancelarEdicionCelda();
+  async function cargarRegistros(opts = {}) {
+    const preserveEdit = !!opts.preserveEdit;
+    const snap = preserveEdit ? afiduSnapshotEdicion() : null;
+    const liveInput = preserveEdit && _celdaEditando ? _celdaEditando.input : null;
+    if (!preserveEdit) {
+      cancelarEdicionCelda();
+    } else if (_celdaEditando) {
+      // El DOM se reconstruye; el draft queda en snap (no descartar ni disparar flush).
+      _celdaEditando = null;
+    }
     if (!_archivoId) {
       renderBody([]);
       _total = 0;
@@ -1960,6 +2081,16 @@
     const qs = new URLSearchParams({ page: String(_page), limit: String(_limit), archivo_id: String(_archivoId) });
     if (_registrosQ) qs.set('q', _registrosQ);
     const data = await apiAnexo(`/api/anexo-fidu/registros?${qs}`);
+    // Releer el draft por si el usuario siguió tecleando durante el fetch.
+    if (snap && liveInput && document.contains(liveInput)) {
+      snap.draft = String(liveInput.value ?? '');
+      try {
+        if (typeof liveInput.selectionStart === 'number') {
+          snap.selStart = liveInput.selectionStart;
+          snap.selEnd = liveInput.selectionEnd;
+        }
+      } catch (_) { /* ignore */ }
+    }
     _total = data.total || 0;
     renderBody(data.registros || []);
     const info = $('afiduPagerInfo');
@@ -1972,6 +2103,8 @@
     const next = $('afiduPagerNext');
     if (prev) prev.disabled = _page <= 1;
     if (next) next.disabled = _page * _limit >= _total;
+    actualizarInfoArchivo(`${_total} fila(s)`);
+    if (snap) afiduRestaurarEdicion(snap);
   }
 
   async function eliminarRegistro(id, tr) {
@@ -2268,12 +2401,67 @@
     bindGridEvents();
   }
 
-  async function refrescarVistaAfiduActual() {
+  async function refrescarVistaAfiduActual(opts = {}) {
+    const soft = opts.soft !== false;
+
+    // Solo diferir el micro-momento de guardar fila (referencia DOM en vuelo).
+    // Mientras se escribe: se refresca al instante y se restaura el draft de la celda.
+    if (_afiduGuardandoFila) {
+      afiduMarkRefreshPendiente(opts);
+      return;
+    }
+
+    const remoteArchivo = afiduArchivoIdFromRealtime(opts);
+    const remoteCarpeta = afiduCarpetaIdFromRealtime(opts);
+
+    if (
+      soft
+      && remoteArchivo
+      && afiduState.vista === 'archivo'
+      && afiduState.archivoId
+      && Number(remoteArchivo) !== Number(afiduState.archivoId)
+    ) {
+      return;
+    }
+
+    if (
+      soft
+      && remoteCarpeta
+      && !remoteArchivo
+      && afiduState.vista === 'carpeta'
+      && afiduState.carpetaId
+      && Number(remoteCarpeta) !== Number(afiduState.carpetaId)
+    ) {
+      return;
+    }
+
     if (afiduState.seccion === 'personas') {
       await cargarResumenPersonas();
       await cargarListaPersonas();
       return;
     }
+
+    // Soft: solo recargar datos de la vista abierta, sin reabrir el explorador/archivo.
+    if (soft && afiduState.vista === 'archivo' && afiduState.archivoId) {
+      return afiduWithScroll(async () => {
+        await cargarRegistros({ preserveEdit: true });
+      });
+    }
+
+    if (soft && afiduState.vista === 'carpeta' && afiduState.carpetaId) {
+      return afiduWithScroll(async () => {
+        await refrescarArchivos(afiduState.carpetaId);
+        renderAfiduArchivosExplorer();
+      });
+    }
+
+    if (soft && afiduState.vista === 'root') {
+      return afiduWithScroll(async () => {
+        await refrescarCarpetas();
+        renderAfiduRootExplorer();
+      });
+    }
+
     await refrescarCarpetas();
     if (afiduState.vista === 'archivo' && afiduState.archivoId) {
       if (afiduState.carpetaId) await refrescarArchivos(afiduState.carpetaId);

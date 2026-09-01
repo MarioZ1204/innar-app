@@ -15,6 +15,7 @@ const {
 } = require('./soportes-exp-archivo');
 const { syncRipsCarpetasDia } = require('./soportes-rips-carpetas-sync');
 const logger = require('./logger');
+const { moveFileSafeAsync } = require('./fs-move-safe');
 const {
   nuevaOperacionId,
   registrarMovimiento,
@@ -204,7 +205,7 @@ function resolveSourceFileForRename(row, oldDir, newDir, options = {}) {
   return null;
 }
 
-function moveFileSafely(sourcePath, targetPath) {
+async function moveFileSafely(sourcePath, targetPath) {
   if (!sourcePath || !targetPath) return false;
   if (!fs.existsSync(sourcePath)) return false;
   if (path.resolve(sourcePath) === path.resolve(targetPath)) return true;
@@ -214,11 +215,11 @@ function moveFileSafely(sourcePath, targetPath) {
 
   if (fs.existsSync(targetPath)) {
     const backupPath = `${targetPath}.bak.${Date.now()}`;
-    fs.copyFileSync(targetPath, backupPath);
-    fs.unlinkSync(targetPath);
+    await fs.promises.copyFile(targetPath, backupPath);
+    await fs.promises.unlink(targetPath);
   }
 
-  fs.renameSync(sourcePath, targetPath);
+  await moveFileSafeAsync(sourcePath, targetPath);
   return true;
 }
 
@@ -273,7 +274,7 @@ async function renombrarArchivosExpedienteEnDisco(archivos, ctx, oldCodigo, newC
     usedPaths.add(path.resolve(currentPath));
     const targetPath = buildUniqueTargetPathForRename(newDir, targetName, currentPath, herId);
     if (path.resolve(currentPath) !== path.resolve(targetPath)) {
-      moveFileSafely(currentPath, targetPath);
+      await moveFileSafely(currentPath, targetPath);
     }
 
     const finalName = path.basename(targetPath);
@@ -444,7 +445,7 @@ async function aplicarRenombradoPorFev(expedienteId, numeroFactura) {
           rutaNueva: targetPath
         });
         if (path.resolve(currentPath) !== path.resolve(targetPath)) {
-          moveFileSafely(currentPath, targetPath);
+          await moveFileSafely(currentPath, targetPath);
           fileMoves.push({ from: currentPath, to: targetPath });
         }
         fp.finalPath = targetPath;
@@ -613,7 +614,7 @@ async function revertirRenombradoPorFev(expedienteId, { paciente_linea, paciente
         if (currentPath) usedPaths.add(path.resolve(currentPath));
         const targetPath = buildUniqueTargetPathForRename(newDir, targetName, currentPath, her.id);
         if (currentPath && currentPath !== targetPath && fs.existsSync(currentPath)) {
-          moveFileSafely(currentPath, targetPath);
+          await moveFileSafely(currentPath, targetPath);
         }
         const finalName = path.basename(targetPath);
         const rutaRelativa = path.join(newRel, finalName).replace(/\\/g, '/');
@@ -641,7 +642,7 @@ async function revertirRenombradoPorFev(expedienteId, { paciente_linea, paciente
         if (currentPath) usedPaths.add(path.resolve(currentPath));
         const targetPath = buildUniqueTargetPathForRename(newDir, targetName, currentPath, her.id);
         if (currentPath && currentPath !== targetPath && fs.existsSync(currentPath)) {
-          moveFileSafely(currentPath, targetPath);
+          await moveFileSafely(currentPath, targetPath);
         }
         const finalName = path.basename(targetPath);
         const rutaRelativa = path.join(newRel, finalName).replace(/\\/g, '/');

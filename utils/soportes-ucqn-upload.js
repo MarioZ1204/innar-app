@@ -3,9 +3,9 @@
 const path = require('path');
 const fs = require('fs');
 const db = require('./db-mysql');
-const { fileLooksLikePdf } = require('../middleware/upload');
+const { fileLooksLikePdfAsync } = require('../middleware/upload');
 const { SOPORTES_ROOT, ensureDir } = require('./soportes-storage');
-const { moveFileSafe } = require('./fs-move-safe');
+const { moveFileSafeAsync, pathExists } = require('./fs-move-safe');
 const { decodeUploadFilename, safeOriginalFilename } = require('./soportes-archivo-detect');
 const {
   getArmadoUcqnPersonaDir,
@@ -39,7 +39,7 @@ async function resolveUcqnUploadContext(exp) {
 }
 
 async function saveUcqnPdf(exp, tempPath, originalName, usuarioId, opts = {}) {
-  if (!fileLooksLikePdf(tempPath)) {
+  if (!(await fileLooksLikePdfAsync(tempPath))) {
     throw new Error('Solo se permiten archivos PDF');
   }
   const ctx = await resolveUcqnUploadContext(exp);
@@ -50,7 +50,7 @@ async function saveUcqnPdf(exp, tempPath, originalName, usuarioId, opts = {}) {
   let diskName = ucqnDiskName(displayName);
   let destPath = path.join(ctx.absDir, diskName);
   let n = 1;
-  while (fs.existsSync(destPath)) {
+  while (await pathExists(destPath)) {
     const ext = path.extname(diskName);
     const stem = path.basename(diskName, ext);
     diskName = `${stem}_${n}${ext}`;
@@ -58,9 +58,9 @@ async function saveUcqnPdf(exp, tempPath, originalName, usuarioId, opts = {}) {
     n += 1;
   }
 
-  moveFileSafe(tempPath, destPath);
+  await moveFileSafeAsync(tempPath, destPath);
   const rutaRelativa = path.join(ctx.relDir, diskName).replace(/\\/g, '/');
-  const tamano = fs.statSync(destPath).size;
+  const tamano = (await fs.promises.stat(destPath)).size;
 
   const dup = await db.query(
     'SELECT id FROM sop_exp_archivos WHERE expediente_id = ? AND ruta_relativa = ? LIMIT 1',

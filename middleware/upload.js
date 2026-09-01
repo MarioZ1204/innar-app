@@ -73,6 +73,22 @@ function fileLooksLikePdf(filePath) {
   }
 }
 
+async function fileLooksLikePdfAsync(filePath) {
+  let fh;
+  try {
+    fh = await fs.promises.open(filePath, 'r');
+    const buf = Buffer.alloc(1024);
+    const { bytesRead } = await fh.read(buf, 0, 1024, 0);
+    return bufferLooksLikePdf(buf.subarray(0, bytesRead));
+  } catch (_) {
+    return false;
+  } finally {
+    if (fh) {
+      try { await fh.close(); } catch (_) { /* ignore */ }
+    }
+  }
+}
+
 function resolveUploadedFilePath(file) {
   if (!file) return null;
   const candidates = [];
@@ -90,7 +106,7 @@ function resolveUploadedFilePath(file) {
     : null);
 }
 
-function validateOneUploadedFile(file, res) {
+async function validateOneUploadedFile(file) {
   const filePath = resolveUploadedFilePath(file);
   const ext = path.extname(file.originalname).toLowerCase();
   if (EXT_CSV.includes(ext)) {
@@ -101,49 +117,57 @@ function validateOneUploadedFile(file, res) {
     return 'El archivo subido no está en disco. Revise permisos de UPLOADS_DIR.';
   }
   file.path = filePath;
+  let fh;
   try {
-    const fd = fs.openSync(filePath, 'r');
+    fh = await fs.promises.open(filePath, 'r');
     const scanLen = EXT_PDF.includes(ext) ? 1024 : 12;
     const buf = Buffer.alloc(scanLen);
-    const bytesRead = fs.readSync(fd, buf, 0, scanLen, 0);
-    fs.closeSync(fd);
+    const { bytesRead } = await fh.read(buf, 0, scanLen, 0);
     const matches = detectByMagic(buf.subarray(0, bytesRead), ext);
     if (!matches) {
-      try { fs.unlinkSync(filePath); } catch (_) { /* ignore */ }
+      try { await fs.promises.unlink(filePath); } catch (_) { /* ignore */ }
       return 'El contenido del archivo no coincide con su extensión';
     }
     return null;
   } catch (e) {
-    if (EXT_PDF.includes(ext) && filePath && fs.existsSync(filePath) && fileLooksLikePdf(filePath)) {
+    if (EXT_PDF.includes(ext) && filePath && (await fileLooksLikePdfAsync(filePath))) {
       file.path = filePath;
       if (!file.destination) file.destination = path.dirname(filePath);
       if (!file.filename) file.filename = path.basename(filePath);
       return null;
     }
-    try { if (filePath && fs.existsSync(filePath)) fs.unlinkSync(filePath); } catch (_) { /* ignore */ }
+    try { await fs.promises.unlink(filePath); } catch (_) { /* ignore */ }
     return 'No se pudo validar el archivo subido';
+  } finally {
+    if (fh) {
+      try { await fh.close(); } catch (_) { /* ignore */ }
+    }
   }
 }
 
-function validateMagicBytes(req, res, next) {
-  const batch = Array.isArray(req.files)
-    ? req.files
-    : (req.files && typeof req.files === 'object' ? Object.values(req.files).flat() : []);
-  if (batch.length) {
-    for (const f of batch) {
-      const errMsg = validateOneUploadedFile(f, res);
-      if (errMsg) return res.status(400).json({ error: errMsg });
+async function validateMagicBytes(req, res, next) {
+  try {
+    const batch = Array.isArray(req.files)
+      ? req.files
+      : (req.files && typeof req.files === 'object' ? Object.values(req.files).flat() : []);
+    if (batch.length) {
+      for (const f of batch) {
+        const errMsg = await validateOneUploadedFile(f);
+        if (errMsg) return res.status(400).json({ error: errMsg });
+      }
+      return next();
+    }
+    if (!req.file) return next();
+    const errMsg = await validateOneUploadedFile(req.file);
+    if (errMsg) {
+      req.file = null;
+      const status = errMsg.includes('disco') ? 500 : 400;
+      return res.status(status).json({ error: errMsg });
     }
     return next();
+  } catch (e) {
+    return next(e);
   }
-  if (!req.file) return next();
-  const errMsg = validateOneUploadedFile(req.file, res);
-  if (errMsg) {
-    req.file = null;
-    const status = errMsg.includes('disco') ? 500 : 400;
-    return res.status(status).json({ error: errMsg });
-  }
-  return next();
 }
 
 function detectByMagic(buf, ext) {
@@ -203,5 +227,6 @@ module.exports = {
   validateMagicBytes,
   resolveUploadedFilePath,
   fileLooksLikePdf,
+  fileLooksLikePdfAsync,
   bufferLooksLikePdf
 };

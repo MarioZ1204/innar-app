@@ -990,6 +990,80 @@
     return armNavEpoch;
   }
 
+  /** Subidas FE en paralelo: solo bloquea el mismo slot / dropzone inteligente. */
+  let armUploadsInFlight = 0;
+  const armSlotsUploading = new Set();
+  let armRefreshPendiente = false;
+  let armRefreshExpIdPendiente = null;
+  const ARM_SMART_UPLOAD_KEY = '__smart__';
+
+  function armSlotInputSelector(slotKey) {
+    const k = String(slotKey || '').replace(/"/g, '');
+    if (!k || k === ARM_SMART_UPLOAD_KEY) return null;
+    return `[data-upload-slot="${k}"], [data-replace-slot="${k}"]`;
+  }
+
+  function armSetSlotBusy(slotKey, busy) {
+    const sel = armSlotInputSelector(slotKey);
+    if (!sel) return;
+    $('sopArmExpedientePanel')?.querySelectorAll(sel).forEach((el) => {
+      el.disabled = !!busy;
+    });
+  }
+
+  function armSetSmartDropzoneBusy(busy) {
+    const dz = $('sopArmExpedientePanel')?.querySelector('#sopFeDropzone');
+    if (!dz) return;
+    if (busy) {
+      dz.dataset.uploading = '1';
+      dz.classList.add('is-uploading');
+      dz.setAttribute('aria-busy', 'true');
+    } else {
+      delete dz.dataset.uploading;
+      dz.classList.remove('is-uploading');
+      dz.removeAttribute('aria-busy');
+    }
+  }
+
+  function armBeginUpload(slotKey) {
+    const key = slotKey || ARM_SMART_UPLOAD_KEY;
+    armSlotsUploading.add(key);
+    armUploadsInFlight += 1;
+    if (key === ARM_SMART_UPLOAD_KEY) armSetSmartDropzoneBusy(true);
+    else armSetSlotBusy(key, true);
+    return key;
+  }
+
+  function armFlushRefreshPendiente() {
+    if (armUploadsInFlight > 0 || !armRefreshPendiente) return;
+    const expId = armRefreshExpIdPendiente;
+    armRefreshPendiente = false;
+    armRefreshExpIdPendiente = null;
+    if (expId && armState.vista === 'expediente' && Number(armState.expedienteId) === Number(expId)) {
+      abrirExpedienteArmado(expId).catch(() => {});
+      return;
+    }
+    refrescarVistaArmadoActual().catch(() => {});
+  }
+
+  function armEndUpload(slotKey, opts = {}) {
+    const key = slotKey || ARM_SMART_UPLOAD_KEY;
+    armSlotsUploading.delete(key);
+    armUploadsInFlight = Math.max(0, armUploadsInFlight - 1);
+    if (key === ARM_SMART_UPLOAD_KEY) armSetSmartDropzoneBusy(false);
+    else armSetSlotBusy(key, false);
+    if (opts.refreshExpId) {
+      armRefreshPendiente = true;
+      armRefreshExpIdPendiente = opts.refreshExpId;
+    }
+    armFlushRefreshPendiente();
+  }
+
+  function armMarkRefreshPendiente(expId) {
+    armRefreshPendiente = true;
+    if (expId != null) armRefreshExpIdPendiente = expId;
+  }
+
   const SOP_VIEW_LS = { pdx: 'innar.sop.pdx.folderView', arm: 'innar.sop.arm.folderView' };
 
   function sopFolderViewMode(mod) {
@@ -2609,8 +2683,10 @@
     if (ordenSel) ordenSel.value = pdxState.filtros.orden;
   }
 
-  async function cargarCarpetasPdx() {
-    showSkeletonFolderGrid($('sopPdxLista'), 6);
+  async function cargarCarpetasPdx(opts = {}) {
+    if (!opts || typeof opts !== 'object') opts = {};
+    const silent = !!opts.silent;
+    if (!silent) showSkeletonFolderGrid($('sopPdxLista'), 6);
     const res = await apiFetch('/api/soportes/pdx/carpetas');
     const data = await res.json();
     if (res.status === 401) return null;
@@ -4292,12 +4368,61 @@
     };
   }
 
-  async function refrescarVistaPdxActual() {
+  async function recargarArchivosCarpetaPdxSilencioso(carpetaId) {
+    const id = parseInt(carpetaId, 10);
+    if (!id || Number(pdxState.carpetaId) !== id) return false;
+    const res = await apiFetch(`/api/soportes/pdx/carpetas/${id}/archivos`);
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) return false;
+    const filtro = pdxState.filtroArchivos || '';
+    pdxState.archivos = ordenarArchivosPdxPorFecha(data.archivos || []);
+    if (data.carpeta) {
+      pdxState.carpetaActual = data.carpeta;
+      const meta = $('sopPdxDetalleMeta');
+      if (meta) {
+        meta.innerHTML = `${escapeHtml(data.carpeta.periodo)} ${badgeVis(data.carpeta.estado_visibilidad, data.carpeta.dias_restantes_gracia)}`;
+        sopIcons(meta);
+      }
+    }
+    pdxState.filtroArchivos = filtro;
+    renderPdxArchivosTabla();
+    sopIcons($('sopPdxArchivosBody'));
+    return true;
+  }
+
+  async function refrescarVistaPdxActual(opts = {}) {
+    const soft = opts.soft !== false;
+    const remoteCarpeta = parseInt(opts.carpetaId || opts.carpeta_id, 10) || null;
+    // Cambio en otra carpeta: no reconstruir la vista abierta.
+    if (
+      soft
+      && remoteCarpeta
+      && pdxState.carpetaId
+      && Number(remoteCarpeta) !== Number(pdxState.carpetaId)
+    ) {
+      // Solo actualizar contadores de la lista en segundo plano si estamos en lista.
+      if (!$('sopPdxVistaDetalle') || $('sopPdxVistaDetalle').classList.contains('hidden')) {
+        await cargarCarpetasPdx({ silent: true }).catch(() => null);
+        renderListaCarpetasPdx();
+      }
+      return;
+    }
     const run = async () => {
-      const data = await cargarCarpetasPdx();
+      if (soft && pdxState.carpetaId) {
+        const ok = await recargarArchivosCarpetaPdxSilencioso(pdxState.carpetaId);
+        if (ok) return;
+      }
+      const data = await cargarCarpetasPdx({ silent: soft });
       if (!data) return;
-      if (pdxState.carpetaId) await abrirCarpetaPdx(pdxState.carpetaId);
-      else renderListaCarpetasPdx();
+      if (pdxState.carpetaId) {
+        if (soft) {
+          const ok = await recargarArchivosCarpetaPdxSilencioso(pdxState.carpetaId);
+          if (ok) return;
+        }
+        await abrirCarpetaPdx(pdxState.carpetaId);
+      } else {
+        renderListaCarpetasPdx();
+      }
     };
     return sopWithScroll(run);
   }
@@ -5594,10 +5719,16 @@
   }
 
   async function subirArchivoFeSmart(expId, file, tipoManual, opts = {}) {
-    const activePanel = $('sopArmExpedientePanel');
-    const activeDropzone = activePanel?.querySelector('#sopFeDropzone');
-    if (activeDropzone?.dataset.uploading === '1') {
-      sopToast('Espere a que termine la subida actual', 'warning');
+    const slotKey = tipoManual
+      ? String(tipoManual).toUpperCase()
+      : ARM_SMART_UPLOAD_KEY;
+    if (armSlotsUploading.has(slotKey)) {
+      sopToast(
+        slotKey === ARM_SMART_UPLOAD_KEY
+          ? 'Espere a que termine la subida del área de carga'
+          : `Ya se está subiendo ${slotKey}`,
+        'warning'
+      );
       return;
     }
     const esRips = opts.esRips ?? (armState.contenedorTipo === 'rips');
@@ -5610,14 +5741,7 @@
       );
       return;
     }
-    if (activeDropzone) {
-      activeDropzone.dataset.uploading = '1';
-      activeDropzone.classList.add('is-uploading');
-      activeDropzone.setAttribute('aria-busy', 'true');
-    }
-    activePanel?.querySelectorAll('[data-upload-slot], [data-replace-slot]').forEach((input) => {
-      input.disabled = true;
-    });
+    armBeginUpload(slotKey);
     const fd = new FormData();
     fd.append('file', file);
     if (tipoManual) fd.append('tipo', tipoManual);
@@ -5637,45 +5761,24 @@
       );
     } catch (e) {
       sopToast(e.message || 'Error de conexión', 'error');
-      if (activeDropzone) {
-        delete activeDropzone.dataset.uploading;
-        activeDropzone.classList.remove('is-uploading');
-        activeDropzone.removeAttribute('aria-busy');
-      }
-      activePanel?.querySelectorAll('[data-upload-slot], [data-replace-slot]').forEach((input) => {
-        input.disabled = false;
-      });
+      armEndUpload(slotKey);
       return;
     }
     const data = res.data || {};
     if (!res.ok) {
       if (data.requiere_tipo) {
-        if (activeDropzone) {
-          delete activeDropzone.dataset.uploading;
-          activeDropzone.classList.remove('is-uploading');
-          activeDropzone.removeAttribute('aria-busy');
-        }
-        activePanel?.querySelectorAll('[data-upload-slot], [data-replace-slot]').forEach((input) => {
-          input.disabled = false;
-        });
+        armEndUpload(slotKey);
         sopUploadHidePanel();
         return modalElegirTipoArchivo(expId, file, data.nombre_original, { esRips, tipoServicio: opts.tipoServicio });
       }
       const msg = data.error || 'Error al subir';
       if (uploadCtx.manageSession) sopUploadFinish({ state: 'error', message: msg });
       sopToast(msg, 'error');
-      if (activeDropzone) {
-        delete activeDropzone.dataset.uploading;
-        activeDropzone.classList.remove('is-uploading');
-        activeDropzone.removeAttribute('aria-busy');
-      }
-      activePanel?.querySelectorAll('[data-upload-slot], [data-replace-slot]').forEach((input) => {
-        input.disabled = false;
-      });
+      armEndUpload(slotKey);
       return;
     }
     sopToast(data.message || 'Archivo guardado', 'success');
-    abrirExpedienteArmado(expId);
+    armEndUpload(slotKey, { refreshExpId: expId });
   }
 
   function modalElegirTipoArchivo(expId, file, nombreOriginal, ctx = {}) {
@@ -6826,7 +6929,68 @@
     };
   }
 
-  async function refrescarVistaArmadoActual() {
+  function armExpedienteIdFromRealtime(payload) {
+    if (!payload || typeof payload !== 'object') return null;
+    const direct = parseInt(payload.expedienteId || payload.expediente_id, 10);
+    if (Number.isFinite(direct) && direct > 0) return direct;
+    const m = String(payload.path || '').match(/\/soportes\/armado\/expedientes\/(\d+)/i);
+    if (m) {
+      const id = parseInt(m[1], 10);
+      if (Number.isFinite(id) && id > 0) return id;
+    }
+    return null;
+  }
+
+  async function refrescarVistaArmadoActual(opts = {}) {
+    if (armUploadsInFlight > 0) {
+      armMarkRefreshPendiente(armState.expedienteId);
+      return;
+    }
+    const soft = opts.soft !== false;
+    // Subida de otro FE / otro usuario: no recargar el expediente que este usuario tiene abierto.
+    const remoteExp = armExpedienteIdFromRealtime(opts)
+      || (opts.expedienteId != null ? parseInt(opts.expedienteId, 10) : null);
+    if (
+      remoteExp
+      && armState.vista === 'expediente'
+      && armState.expedienteId
+      && Number(remoteExp) !== Number(armState.expedienteId)
+    ) {
+      return;
+    }
+
+    // Refresh suave: solo recargar la hoja actual, sin reconstruir todo el árbol.
+    if (soft) {
+      const vista = armState.vista;
+      if (vista === 'expediente' && armState.expedienteId) {
+        if (!remoteExp || Number(remoteExp) === Number(armState.expedienteId)) {
+          return sopWithScroll(() => abrirExpedienteArmado(armState.expedienteId));
+        }
+        return;
+      }
+      if (vista === 'contenedor' && armState.contenedorId) {
+        return sopWithScroll(() => refrescarExpedientesContenedorArmado(armState.contenedorId));
+      }
+      if (vista === 'day' && armState.diaId) {
+        return sopWithScroll(async () => {
+          const res = await apiFetch(`/api/soportes/armado/periodos/${armState.periodoId}/dias`);
+          const data = await res.json().catch(() => ({}));
+          if (res.ok) armState.dias = data.dias || [];
+          renderArmadoDiasExplorer();
+          renderArmadoContextBar();
+        });
+      }
+      if (vista === 'period' || vista === 'empty') {
+        return sopWithScroll(async () => {
+          await cargarPeriodosArmado();
+          renderPeriodosArmado();
+          renderArmadoPeriodoSummary();
+          renderArmadoDiasExplorer();
+          renderArmadoContextBar();
+        });
+      }
+    }
+
     const run = async () => {
     const epoch = armNavEpoch;
     const snap = {

@@ -10,7 +10,7 @@ const fs = require('fs');
 
 const db = require('./db-mysql');
 
-const { fileLooksLikePdf } = require('../middleware/upload');
+const { fileLooksLikePdfAsync } = require('../middleware/upload');
 
 const { getArmadoFeDirForExpediente } = require('./soportes-storage');
 
@@ -32,7 +32,7 @@ const {
 
 const { aplicarRenombradoPorFev } = require('./soportes-fe-rename');
 
-const { moveFileSafe: moveFileToDest } = require('./fs-move-safe');
+const { moveFileSafeAsync: moveFileToDest, pathExists, unlinkIfExists } = require('./fs-move-safe');
 
 async function loadRipsSlotsOcupados(expedienteId) {
 
@@ -82,11 +82,11 @@ async function saveRipsArchivo(exp, ctx, slotKey, tempPath, originalName, usuari
 
   const destPath = path.join(feDir, diskName);
 
-  moveFileToDest(tempPath, destPath);
+  await moveFileToDest(tempPath, destPath);
 
   const rutaRelativa = path.join(feRel, diskName).replace(/\\/g, '/');
 
-  const tamano = fs.statSync(destPath).size;
+  const tamano = (await fs.promises.stat(destPath)).size;
 
   const slotDb = slotKey === 'RIPS_JSON_1' ? 'json_1' : slotKey === 'RIPS_JSON_2' ? 'json_2' : 'xml';
 
@@ -158,12 +158,12 @@ async function saveSoportesArchivo(exp, ctx, slotKey, tempPath, originalName, us
     'SELECT * FROM sop_exp_archivos WHERE expediente_id = ? AND tipo = ?',
     [exp.id, slotKey]
   );
-  const backupPath = fs.existsSync(destPath) ? `${destPath}.replace-backup.${Date.now()}` : null;
+  const backupPath = (await pathExists(destPath)) ? `${destPath}.replace-backup.${Date.now()}` : null;
   let renombrado = null;
   try {
-    if (backupPath) fs.renameSync(destPath, backupPath);
-    moveFileToDest(tempPath, destPath);
-    const tamano = fs.statSync(destPath).size;
+    if (backupPath) await fs.promises.rename(destPath, backupPath);
+    await moveFileToDest(tempPath, destPath);
+    const tamano = (await fs.promises.stat(destPath)).size;
 
     await db.execute('DELETE FROM sop_exp_archivos WHERE expediente_id = ? AND tipo = ?', [exp.id, slotKey]);
     await db.execute(
@@ -184,7 +184,7 @@ async function saveSoportesArchivo(exp, ctx, slotKey, tempPath, originalName, us
         throw new Error(renombrado.error || 'No se pudo renombrar la carpeta con el número de factura');
       }
     }
-    if (backupPath && fs.existsSync(backupPath)) fs.unlinkSync(backupPath);
+    if (backupPath && (await pathExists(backupPath))) await unlinkIfExists(backupPath);
   } catch (e) {
     try {
       await db.execute('DELETE FROM sop_exp_archivos WHERE expediente_id = ? AND tipo = ?', [exp.id, slotKey]);
@@ -208,8 +208,10 @@ async function saveSoportesArchivo(exp, ctx, slotKey, tempPath, originalName, us
       }
     } catch (_) { /* conservar error original */ }
     try {
-      if (fs.existsSync(destPath)) fs.unlinkSync(destPath);
-      if (backupPath && fs.existsSync(backupPath)) fs.renameSync(backupPath, destPath);
+      await unlinkIfExists(destPath);
+      if (backupPath && (await pathExists(backupPath))) {
+        await fs.promises.rename(backupPath, destPath);
+      }
     } catch (_) { /* recuperación informada por el error original */ }
     throw e;
   }
@@ -232,7 +234,7 @@ async function saveSoportesArchivo(exp, ctx, slotKey, tempPath, originalName, us
 
 
 
-function validarPdfSoportes(tempPath, originalName) {
+async function validarPdfSoportes(tempPath, originalName) {
 
   const ext = path.extname(originalName).toLowerCase();
 
@@ -242,7 +244,7 @@ function validarPdfSoportes(tempPath, originalName) {
 
   }
 
-  if (!fileLooksLikePdf(tempPath)) {
+  if (!(await fileLooksLikePdfAsync(tempPath))) {
 
     return { ok: false, error: 'El archivo no es un PDF válido. Verifique que sea un documento PDF real.' };
 
@@ -282,7 +284,7 @@ async function ingestFeArchivo(exp, ctx, tempPath, originalName, usuarioId, tipo
 
     const extR = path.extname(originalName).toLowerCase();
 
-    if (extR === '.pdf' || fileLooksLikePdf(tempPath)) {
+    if (extR === '.pdf' || (await fileLooksLikePdfAsync(tempPath))) {
 
       return {
 
@@ -330,7 +332,7 @@ async function ingestFeArchivo(exp, ctx, tempPath, originalName, usuarioId, tipo
 
 
 
-  const pdfCheck = validarPdfSoportes(tempPath, originalName);
+  const pdfCheck = await validarPdfSoportes(tempPath, originalName);
 
   if (!pdfCheck.ok) {
 
