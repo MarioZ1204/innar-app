@@ -2921,6 +2921,48 @@ label.sop-slot-action-btn.sop-slot-replace {
   display: none;
 }
 
+.sop-inline-notice {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin: 0 0 14px;
+  padding: 12px 14px;
+  border: 1px solid #a5b4fc;
+  border-radius: 10px;
+  background: #eef2ff;
+  color: #312e81;
+  font-size: 0.9rem;
+  line-height: 1.4;
+}
+
+.sop-inline-notice.hidden {
+  display: none;
+}
+
+.sop-inline-notice-body {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  flex: 1;
+  min-width: 200px;
+}
+
+.sop-inline-notice-body i {
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+.sop-inline-notice-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
 .sop-pdx-bulk-select-all {
   display: inline-flex;
   align-items: center;

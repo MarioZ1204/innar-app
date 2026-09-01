@@ -2671,17 +2671,18 @@
   }
 
   function setupPdxFiltros() {
-    const sync = () => {
+    const syncNow = () => {
       pdxState.filtros.texto = $('sopPdxFiltroTexto')?.value || '';
       pdxState.filtros.periodo = $('sopPdxFiltroPeriodo')?.value || '';
       pdxState.filtros.tema = $('sopPdxFiltroTema')?.value || '';
       pdxState.filtros.orden = $('sopPdxFiltroOrden')?.value || 'nombre_asc';
       renderListaCarpetasPdx();
     };
-    $('sopPdxFiltroTexto')?.addEventListener('input', sync);
-    $('sopPdxFiltroPeriodo')?.addEventListener('change', sync);
-    $('sopPdxFiltroTema')?.addEventListener('change', sync);
-    $('sopPdxFiltroOrden')?.addEventListener('change', sync);
+    const syncTexto = sopDebounce(syncNow, 180);
+    $('sopPdxFiltroTexto')?.addEventListener('input', syncTexto);
+    $('sopPdxFiltroPeriodo')?.addEventListener('change', syncNow);
+    $('sopPdxFiltroTema')?.addEventListener('change', syncNow);
+    $('sopPdxFiltroOrden')?.addEventListener('change', syncNow);
     const ordenSel = $('sopPdxFiltroOrden');
     if (ordenSel) ordenSel.value = pdxState.filtros.orden;
   }
@@ -2725,6 +2726,43 @@
 
   function pdxPuedeArchivar() {
     return sopPerm('soportes.pdx.editar');
+  }
+
+  function mostrarAvisoArchivoPdx(n, archivadas) {
+    const el = $('sopPdxArchivoAviso');
+    if (!el) return;
+    const nombres = (archivadas || []).map((c) => c.nombre_display).filter(Boolean);
+    const detalle = nombres.length && nombres.length <= 2
+      ? ` (${nombres.map((x) => `«${x}»`).join(', ')})`
+      : '';
+    el.classList.remove('hidden');
+    el.innerHTML = `
+      <div class="sop-inline-notice-body">
+        <i data-lucide="folder-input" aria-hidden="true"></i>
+        <div>
+          <strong>${n} carpeta${n === 1 ? '' : 's'}</strong> ahora está${n === 1 ? '' : 'n'} en
+          <strong>Reportes anteriores</strong>${escapeHtml(detalle)}.
+          Los PDF no se borran; ya no aparecen aquí.
+        </div>
+      </div>
+      <div class="sop-inline-notice-actions">
+        <button type="button" class="sop-btn sop-btn-primary sop-btn-sm" data-pdx-ir-historico>
+          <i data-lucide="folder-clock"></i> Ver en Reportes anteriores
+        </button>
+        <button type="button" class="sop-btn sop-btn-ghost sop-btn-sm" data-pdx-cerrar-aviso aria-label="Cerrar aviso">
+          <i data-lucide="x"></i>
+        </button>
+      </div>`;
+    el.querySelector('[data-pdx-ir-historico]')?.addEventListener('click', () => {
+      el.classList.add('hidden');
+      el.innerHTML = '';
+      if (typeof goToModule === 'function') goToModule('reportes-historico');
+    });
+    el.querySelector('[data-pdx-cerrar-aviso]')?.addEventListener('click', () => {
+      el.classList.add('hidden');
+      el.innerHTML = '';
+    });
+    sopIcons(el);
   }
 
   function pdxIdsSeleccionables(lista) {
@@ -2792,13 +2830,25 @@
       const omit = (data.omitidas || []).length;
       if (n) {
         sopToast(
-          `${n} carpeta${n === 1 ? '' : 's'} movida${n === 1 ? '' : 's'} a Reportes anteriores`,
+          `${n} carpeta${n === 1 ? '' : 's'} movida${n === 1 ? '' : 's'} a Reportes anteriores.`,
           'success'
         );
+        mostrarAvisoArchivoPdx(n, data.archivadas || []);
       } else if (omit) sopToast('Las carpetas seleccionadas ya estaban en Reportes anteriores', 'info');
       else sopToast('No se movió ninguna carpeta', 'warning');
       pdxState.seleccionadas.clear();
-      await cargarCarpetasPdx();
+      const archivadasIds = new Set((data.archivadas || []).map((c) => Number(c.id)));
+      // Si estabas dentro de una carpeta archivada, vuelve a la lista.
+      if (pdxState.carpetaId && archivadasIds.has(Number(pdxState.carpetaId))) {
+        pdxState.carpetaId = null;
+        pdxState.carpetaActual = null;
+        pdxState.archivos = [];
+        const vistaLista = $('sopPdxVistaLista');
+        const vistaDetalle = $('sopPdxVistaDetalle');
+        if (vistaLista) vistaLista.classList.remove('hidden');
+        if (vistaDetalle) vistaDetalle.classList.add('hidden');
+      }
+      await cargarCarpetasPdx({ silent: true });
       renderListaCarpetasPdx();
     };
     if (typeof window.confirmEliminar === 'function') {
@@ -4196,9 +4246,16 @@
     abrirCarpetaPdx(carpetaId);
   }
 
+  let pdxBuscarAbort = null;
+  let pdxBuscarSeq = 0;
+
   async function buscarPdx() {
     const q = $('sopPdxBuscar')?.value?.trim();
     if (!q || q.length < 2) {
+      if (pdxBuscarAbort) {
+        try { pdxBuscarAbort.abort(); } catch (_) { /* noop */ }
+        pdxBuscarAbort = null;
+      }
       cerrarResultadosPdx(false);
       return;
     }
@@ -4207,49 +4264,87 @@
     el.innerHTML = `<div class="sop-search-results-head"><h4>Resultados de búsqueda</h4><span class="sop-search-results-meta">Buscando…</span></div>
       <div class="sop-search-results-body"><div class="sop-empty" style="padding:24px"><i data-lucide="loader" class="sop-empty-icon"></i></div></div>`;
     sopIcons(el);
-    const res = await apiFetch(`/api/soportes/pdx/buscar?q=${encodeURIComponent(q)}`);
-    const data = await res.json();
-    const list = data.resultados || [];
-    if (!list.length) {
+
+    if (pdxBuscarAbort) {
+      try { pdxBuscarAbort.abort(); } catch (_) { /* noop */ }
+    }
+    const ac = typeof AbortController !== 'undefined' ? new AbortController() : null;
+    pdxBuscarAbort = ac;
+    const seq = ++pdxBuscarSeq;
+
+    try {
+      const res = await apiFetch(`/api/soportes/pdx/buscar?q=${encodeURIComponent(q)}`, ac ? { signal: ac.signal } : undefined);
+      const data = await res.json().catch(() => ({}));
+      if (seq !== pdxBuscarSeq) return;
+      if (!res.ok) throw new Error(data.error || `Error HTTP ${res.status}`);
+      const list = data.resultados || [];
+      const truncated = !!data.truncated;
+      if (!list.length) {
+        el.innerHTML = `<div class="sop-search-results-head">
+            <h4>Resultados de búsqueda</h4>
+            <span class="sop-search-results-meta">Sin coincidencias</span>
+            <button type="button" class="sop-btn sop-btn-ghost sop-btn-sm" data-close-pdx-search><i data-lucide="x"></i> Cerrar</button>
+          </div>
+          <div class="sop-search-results-body"><div class="sop-empty" style="padding:20px">No se encontraron archivos activos para «${escapeHtml(q)}». Las carpetas en Reportes anteriores no aparecen aquí.</div></div>`;
+        el.querySelector('[data-close-pdx-search]')?.addEventListener('click', cerrarResultadosPdx);
+        sopIcons(el);
+        return;
+      }
+      const metaTxt = truncated
+        ? `Mostrando ${list.length} (hay más; afina la búsqueda)`
+        : `${list.length} encontrado${list.length !== 1 ? 's' : ''}`;
       el.innerHTML = `<div class="sop-search-results-head">
           <h4>Resultados de búsqueda</h4>
-          <span class="sop-search-results-meta">Sin coincidencias</span>
+          <span class="sop-search-results-meta">${metaTxt}</span>
           <button type="button" class="sop-btn sop-btn-ghost sop-btn-sm" data-close-pdx-search><i data-lucide="x"></i> Cerrar</button>
         </div>
-        <div class="sop-search-results-body"><div class="sop-empty" style="padding:20px">No se encontraron archivos para «${escapeHtml(q)}»</div></div>`;
+        <div class="sop-search-results-body">
+          <div class="sop-table-wrap"><table class="sop-table"><thead><tr>
+            <th>Paciente</th><th>Doc.</th><th>Estudio</th><th>Fecha</th><th>Carpeta</th><th></th></tr></thead><tbody>
+            ${list.map((r) => `<tr>
+              <td><strong>${escapeHtml(r.paciente_nombre)}</strong>
+                ${r.nombre_descarga || r.nombre_archivo_display ? `<div class="sop-search-results-meta">${escapeHtml(r.nombre_descarga || r.nombre_archivo_display)}</div>` : ''}</td>
+              <td>${escapeHtml(r.paciente_documento || '—')}</td>
+              <td>${escapeHtml(r.estudio_texto || '—')}</td>
+              <td>${escapeHtml(r.fecha_estudio || '—')}</td>
+              <td>${escapeHtml(r.carpeta_nombre)} <span class="sop-search-results-meta">(${escapeHtml(r.periodo)})</span></td>
+              <td style="white-space:nowrap">
+                <button type="button" class="sop-btn sop-btn-ghost sop-btn-sm" data-open-archivo="${r.archivo_id}" title="Ver PDF"><i data-lucide="external-link"></i></button>
+                <button type="button" class="sop-btn sop-btn-ghost sop-btn-sm" data-open-carpeta="${r.carpeta_id}" title="Abrir carpeta"><i data-lucide="folder-open"></i></button>
+              </td>
+            </tr>`).join('')}
+          </tbody></table></div>
+        </div>`;
+      el.querySelector('[data-close-pdx-search]')?.addEventListener('click', cerrarResultadosPdx);
+      el.querySelectorAll('[data-open-archivo]').forEach((b) => {
+        b.addEventListener('click', () => {
+          const id = parseInt(b.dataset.openArchivo, 10);
+          const row = list.find((x) => x.archivo_id === id);
+          const titulo = row?.nombre_descarga || row?.paciente_nombre || row?.nombre_archivo_display || 'Reporte';
+          abrirPdfEnNavegador(`/api/soportes/pdx/archivos/${id}/ver`, titulo);
+        });
+      });
+      el.querySelectorAll('[data-open-carpeta]').forEach((b) => {
+        b.addEventListener('click', () => {
+          const id = parseInt(b.dataset.openCarpeta, 10);
+          if (!id) return;
+          cerrarResultadosPdx(false);
+          abrirCarpetaPdx(id).catch((e) => sopToast(e.message, 'error'));
+        });
+      });
+      sopIcons(el);
+    } catch (e) {
+      if (e?.name === 'AbortError') return;
+      if (seq !== pdxBuscarSeq) return;
+      el.innerHTML = `<div class="sop-search-results-head">
+          <h4>Resultados de búsqueda</h4>
+          <span class="sop-search-results-meta">Error</span>
+          <button type="button" class="sop-btn sop-btn-ghost sop-btn-sm" data-close-pdx-search><i data-lucide="x"></i> Cerrar</button>
+        </div>
+        <div class="sop-search-results-body"><div class="sop-empty" style="padding:20px">${escapeHtml(e.message || 'No se pudo buscar')}</div></div>`;
       el.querySelector('[data-close-pdx-search]')?.addEventListener('click', cerrarResultadosPdx);
       sopIcons(el);
-      return;
     }
-    el.innerHTML = `<div class="sop-search-results-head">
-        <h4>Resultados de búsqueda</h4>
-        <span class="sop-search-results-meta">${list.length} encontrado${list.length !== 1 ? 's' : ''}</span>
-        <button type="button" class="sop-btn sop-btn-ghost sop-btn-sm" data-close-pdx-search><i data-lucide="x"></i> Cerrar</button>
-      </div>
-      <div class="sop-search-results-body">
-        <div class="sop-table-wrap"><table class="sop-table"><thead><tr>
-          <th>Paciente</th><th>Doc.</th><th>Estudio</th><th>Fecha</th><th>Carpeta</th><th></th></tr></thead><tbody>
-          ${list.map((r) => `<tr>
-            <td><strong>${escapeHtml(r.paciente_nombre)}</strong>
-              ${r.nombre_descarga || r.nombre_archivo_display ? `<div class="sop-search-results-meta">${escapeHtml(r.nombre_descarga || r.nombre_archivo_display)}</div>` : ''}</td>
-            <td>${escapeHtml(r.paciente_documento || '—')}</td>
-            <td>${escapeHtml(r.estudio_texto || '—')}</td>
-            <td>${escapeHtml(r.fecha_estudio || '—')}</td>
-            <td>${escapeHtml(r.carpeta_nombre)} <span class="sop-search-results-meta">(${escapeHtml(r.periodo)})</span></td>
-            <td><button type="button" class="sop-btn sop-btn-ghost sop-btn-sm" data-open-archivo="${r.archivo_id}" title="Ver PDF en nueva pestaña"><i data-lucide="external-link"></i> Abrir</button></td>
-          </tr>`).join('')}
-        </tbody></table></div>
-      </div>`;
-    el.querySelector('[data-close-pdx-search]')?.addEventListener('click', cerrarResultadosPdx);
-    el.querySelectorAll('[data-open-archivo]').forEach((b) => {
-      b.addEventListener('click', () => {
-        const id = parseInt(b.dataset.openArchivo, 10);
-        const row = list.find((x) => x.archivo_id === id);
-        const titulo = row?.nombre_descarga || row?.paciente_nombre || row?.nombre_archivo_display || 'Reporte';
-        abrirPdfEnNavegador(`/api/soportes/pdx/archivos/${id}/ver`, titulo);
-      });
-    });
-    sopIcons(el);
   }
 
   const buscarPdxPredictivo = sopDebounce(() => buscarPdx(), 320);
@@ -4401,6 +4496,34 @@
   async function refrescarVistaPdxActual(opts = {}) {
     const soft = opts.soft !== false;
     const remoteCarpeta = parseInt(opts.carpetaId || opts.carpeta_id, 10) || null;
+    const remoteIds = Array.isArray(opts.carpetaIds)
+      ? opts.carpetaIds.map((id) => parseInt(id, 10)).filter((id) => id > 0)
+      : [];
+
+    // Carpetas archivadas: si la abierta fue una de ellas, salir al listado.
+    if (opts.accion === 'carpetas_archivadas' && pdxState.carpetaId) {
+      const abierta = Number(pdxState.carpetaId);
+      if (remoteIds.includes(abierta) || (remoteCarpeta && remoteCarpeta === abierta)) {
+        pdxState.carpetaId = null;
+        pdxState.carpetaActual = null;
+        pdxState.archivos = [];
+        const vistaLista = $('sopPdxVistaLista');
+        const vistaDetalle = $('sopPdxVistaDetalle');
+        if (vistaLista) vistaLista.classList.remove('hidden');
+        if (vistaDetalle) vistaDetalle.classList.add('hidden');
+        await cargarCarpetasPdx({ silent: true }).catch(() => null);
+        renderListaCarpetasPdx();
+        return;
+      }
+    }
+
+    // Carpetas devueltas desde Reportes anteriores: refrescar lista (vuelven a verse aquí).
+    if (opts.accion === 'carpetas_restauradas') {
+      await cargarCarpetasPdx({ silent: true }).catch(() => null);
+      if (!pdxState.carpetaId) renderListaCarpetasPdx();
+      return;
+    }
+
     // Cambio en otra carpeta: no reconstruir la vista abierta.
     if (
       soft
@@ -4506,19 +4629,173 @@
   function renderPeriodosArmado() {
     const el = $('sopArmPeriodos');
     if (!armState.periodos.length) {
-      el.innerHTML = '<div class="sop-empty" style="padding:16px;font-size:.85rem">Sin periodos</div>';
+      el.innerHTML = '<div class="sop-empty" style="padding:16px;font-size:.85rem">Sin periodos activos. Use «Meses archivados» si busca un mes cerrado.</div>';
       return;
     }
-    el.innerHTML = armState.periodos.map((p) =>
-      `<div class="sop-nav-item${armState.periodoId === p.id ? ' active' : ''}" data-periodo-id="${p.id}">
-        <span>${escapeHtml(p.etiqueta || p.periodo)}</span>
-        ${badgeVis(p.estado_visibilidad, p.dias_restantes_gracia)}
-      </div>`
-    ).join('');
+    const canStruct = sopPerm('soportes.armado.crear_estructura');
+    el.innerHTML = armState.periodos.map((p) => {
+      const badge = p.restaurado_en_soportes
+        ? '<span class="sop-badge sop-badge-archivo"><i data-lucide="folder-up" style="width:12px;height:12px"></i> Devuelto</span>'
+        : badgeVis(p.estado_visibilidad, p.dias_restantes_gracia);
+      const btnOcultar = (canStruct && p.restaurado_en_soportes)
+        ? `<button type="button" class="sop-btn sop-btn-ghost sop-btn-sm" data-arm-ocultar="${p.id}" title="Volver a Meses archivados"><i data-lucide="archive"></i></button>`
+        : '';
+      return `<div class="sop-nav-item${armState.periodoId === p.id ? ' active' : ''}" data-periodo-id="${p.id}">
+        <span class="sop-nav-item-main">
+          <span>${escapeHtml(p.etiqueta || p.periodo)}</span>
+          ${badge}
+        </span>
+        ${btnOcultar}
+      </div>`;
+    }).join('');
     el.querySelectorAll('[data-periodo-id]').forEach((item) => {
-      item.addEventListener('click', () => seleccionarPeriodoArmado(parseInt(item.dataset.periodoId, 10)));
+      item.addEventListener('click', (ev) => {
+        if (ev.target.closest('[data-arm-ocultar]')) return;
+        seleccionarPeriodoArmado(parseInt(item.dataset.periodoId, 10));
+      });
+    });
+    el.querySelectorAll('[data-arm-ocultar]').forEach((btn) => {
+      btn.addEventListener('click', (ev) => {
+        ev.stopPropagation();
+        ocultarPeriodoArmadoArchivo(parseInt(btn.dataset.armOcultar, 10))
+          .catch((e) => sopToast(e.message, 'error'));
+      });
     });
     sopIcons(el);
+  }
+
+  async function devolverPeriodoArmado(periodoId) {
+    const id = parseInt(periodoId, 10);
+    if (!id) return;
+    if (!sopPerm('soportes.armado.crear_estructura') && !sopPerm('modulo.armado_soportes')) {
+      sopToast('Sin permiso para devolver meses', 'error');
+      return;
+    }
+    const res = await apiFetch('/api/soportes/armado/periodos/restaurar', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ids: [id] })
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      sopToast(data.error || 'No se pudo devolver el mes', 'error');
+      return;
+    }
+    const ok = (data.restaurados || []).length;
+    const omit = data.omitidos || [];
+    if (ok) {
+      const nom = data.restaurados[0]?.etiqueta || 'Mes';
+      sopToast(`«${nom}» volvió a Soportes`, 'success');
+      await cargarPeriodosArmado();
+      renderPeriodosArmado();
+      await seleccionarPeriodoArmado(id);
+    } else if (omit.length) {
+      sopToast(omit[0].detalle || 'No se pudo devolver', 'warning');
+    } else {
+      sopToast('No se devolvió ningún mes', 'warning');
+    }
+  }
+
+  async function ocultarPeriodoArmadoArchivo(periodoId) {
+    const id = parseInt(periodoId, 10);
+    if (!id) return;
+    const per = armState.periodos.find((p) => Number(p.id) === id);
+    const nombre = per?.etiqueta || per?.periodo || 'este mes';
+    const run = async () => {
+      const res = await apiFetch('/api/soportes/armado/periodos/ocultar-archivo', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids: [id] })
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        sopToast(data.error || 'No se pudo archivar de nuevo', 'error');
+        return;
+      }
+      if ((data.ocultados || []).length) {
+        sopToast(`«${nombre}» volvió a Meses archivados`, 'success');
+        if (Number(armState.periodoId) === id) {
+          armState.periodoId = null;
+          armState.periodoLabel = null;
+          armState.dias = [];
+          armState.vista = 'empty';
+          renderArmadoPeriodoSummary();
+          renderArmadoDiasExplorer();
+          renderArmadoContextBar();
+          const panel = $('sopArmExpedientePanel');
+          if (panel) {
+            panel.innerHTML = `<div class="sop-panel-body"><div class="sop-empty">
+              <i data-lucide="layers" class="sop-empty-icon"></i>
+              Seleccione un mes, una carpeta de día y RIPS o SOPORTES
+            </div></div>`;
+            sopIcons(panel);
+          }
+        }
+        await cargarPeriodosArmado();
+        renderPeriodosArmado();
+      } else if ((data.omitidos || []).length) {
+        sopToast(data.omitidos[0].detalle || 'No se pudo ocultar', 'warning');
+      }
+    };
+    if (typeof window.confirmEliminar === 'function') {
+      window.confirmEliminar(`¿Volver a archivar «${nombre}»?`, run, { okText: 'Archivar', cancelText: 'Cancelar' });
+    } else if (window.confirm(`¿Volver a archivar «${nombre}»?`)) {
+      await run();
+    }
+  }
+
+  async function modalMesesArchivadosArmado() {
+    const wrap = openSopModal(`
+      <div class="sop-dialog-head">
+        <h3 style="margin:0">Meses archivados</h3>
+        <button type="button" class="sop-btn sop-btn-ghost sop-btn-sm" data-sop-close aria-label="Cerrar"><i data-lucide="x"></i></button>
+      </div>
+      <div class="sop-dialog-body">
+        <p class="sop-module-lead" style="margin-top:0">Meses que ya salieron de la lista de Soportes (cierre tras 5 días de gracia). Los PDF/FE siguen en disco. <strong>Devolver</strong> los trae de nuevo a Periodos.</p>
+        <div id="sopArmArchivadosLista"><div class="sop-empty" style="padding:20px"><i data-lucide="loader" class="sop-empty-icon"></i>Cargando…</div></div>
+      </div>`, { closeOnBackdrop: true });
+    wrap.querySelector('[data-sop-close]')?.addEventListener('click', () => wrap._sopClose?.());
+    const listaEl = wrap.querySelector('#sopArmArchivadosLista');
+    try {
+      const res = await apiFetch('/api/soportes/armado/periodos-archivados');
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || 'No se pudieron cargar');
+      const periodos = data.periodos || [];
+      if (!periodos.length) {
+        listaEl.innerHTML = `<div class="sop-empty" style="padding:20px"><i data-lucide="folder-clock" class="sop-empty-icon"></i>No hay meses archivados todavía.</div>`;
+        sopIcons(listaEl);
+        return;
+      }
+      const canDevolver = sopPerm('soportes.armado.crear_estructura') || sopPerm('modulo.armado_soportes');
+      listaEl.innerHTML = `<div class="sop-table-wrap"><table class="sop-table"><thead><tr>
+        <th>Mes</th><th>Periodo</th><th>FE</th><th></th></tr></thead><tbody>
+        ${periodos.map((p) => `<tr>
+          <td><strong>${escapeHtml(p.etiqueta || p.periodo)}</strong></td>
+          <td>${escapeHtml(p.periodo)}</td>
+          <td>${p.expedientes_count || 0}</td>
+          <td style="white-space:nowrap">
+            ${canDevolver ? `<button type="button" class="sop-btn sop-btn-primary sop-btn-sm" data-arm-devolver="${p.id}">
+              <i data-lucide="folder-up"></i> Devolver a Soportes
+            </button>` : '<span class="sop-search-results-meta">Sin permiso para devolver</span>'}
+          </td>
+        </tr>`).join('')}
+      </tbody></table></div>`;
+      listaEl.querySelectorAll('[data-arm-devolver]').forEach((btn) => {
+        btn.addEventListener('click', async () => {
+          btn.disabled = true;
+          try {
+            await devolverPeriodoArmado(parseInt(btn.dataset.armDevolver, 10));
+            wrap._sopClose?.();
+          } catch (e) {
+            sopToast(e.message || 'Error', 'error');
+            btn.disabled = false;
+          }
+        });
+      });
+      sopIcons(listaEl);
+    } catch (e) {
+      listaEl.innerHTML = `<div class="sop-empty" style="padding:20px;color:#dc2626">${escapeHtml(e.message || 'Error')}</div>`;
+    }
   }
 
   async function seleccionarPeriodoArmado(id) {
@@ -6954,6 +7231,31 @@
       return;
     }
     const soft = opts.soft !== false;
+    const remotePeriodoIds = Array.isArray(opts.periodoIds)
+      ? opts.periodoIds.map((id) => parseInt(id, 10)).filter((id) => id > 0)
+      : [];
+
+    if (opts.accion === 'periodos_restaurados' || opts.accion === 'periodos_ocultados') {
+      if (
+        opts.accion === 'periodos_ocultados'
+        && armState.periodoId
+        && remotePeriodoIds.includes(Number(armState.periodoId))
+      ) {
+        armState.periodoId = null;
+        armState.periodoLabel = null;
+        armState.dias = [];
+        armState.vista = 'empty';
+      }
+      await cargarPeriodosArmado().catch(() => null);
+      renderPeriodosArmado();
+      if (!armState.periodoId) {
+        renderArmadoPeriodoSummary();
+        renderArmadoDiasExplorer();
+        renderArmadoContextBar();
+      }
+      return;
+    }
+
     // Subida de otro FE / otro usuario: no recargar el expediente que este usuario tiene abierto.
     const remoteExp = armExpedienteIdFromRealtime(opts)
       || (opts.expedienteId != null ? parseInt(opts.expedienteId, 10) : null);
@@ -7096,6 +7398,9 @@
     });
     $('sopArmNavBackdrop')?.addEventListener('click', () => sopArmNavOpen(false));
     $('btnSopArmNuevoPeriodo')?.addEventListener('click', modalNuevoPeriodoArmado);
+    $('btnSopArmMesesArchivados')?.addEventListener('click', () => {
+      modalMesesArchivadosArmado().catch((e) => sopToast(e.message || 'Error', 'error'));
+    });
     const masBtn = $('btnSopArmMasAcciones');
     const masMenu = $('sopArmMasMenu');
     const closeMasMenu = () => {

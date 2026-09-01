@@ -8,35 +8,35 @@
   <link rel="icon" type="image/png" href="images/icon.png">
   <!-- Preload LCP image (splash logo) -->
   <link rel="preload" as="image" href="/images/logo3.webp" fetchpriority="high">
-  <link rel="preload" as="style" href="style.css?v=1.7.154">
-  <link rel="stylesheet" href="style.css?v=1.7.154">
-  <link rel="stylesheet" href="innar-buttons.css?v=1.7.154">
-  <link rel="stylesheet" href="innar-theme.css?v=1.7.154">
-  <link rel="stylesheet" href="innar-motion.css?v=1.7.154">
-  <link rel="stylesheet" href="innar-scroll.css?v=1.7.154">
-  <link rel="stylesheet" href="innar-sidebar.css?v=1.7.154">
-  <link rel="stylesheet" href="innar-mobile.css?v=1.7.154">
-  <link rel="stylesheet" href="innar-agenda-cal.css?v=1.7.154">
-  <link rel="stylesheet" href="innar-sesiones-multi.css?v=1.7.154">
-  <link rel="stylesheet" href="sede-recordatorio.css?v=1.7.154">
-  <link rel="stylesheet" href="soportes.css?v=1.7.154">
-  <link rel="stylesheet" href="soportes-pdf-editor.css?v=1.7.154">
-  <link rel="stylesheet" href="innar-responsive.css?v=1.7.154">
-  <link rel="stylesheet" href="innar-responsive-shell.css?v=1.7.154">
-  <link rel="stylesheet" href="innar-responsive-recibos.css?v=1.7.154">
-  <link rel="stylesheet" href="innar-responsive-agenda-medica.css?v=1.7.154">
-  <link rel="stylesheet" href="innar-responsive-electro.css?v=1.7.154">
-  <link rel="stylesheet" href="innar-responsive-usuarios.css?v=1.7.154">
-  <link rel="stylesheet" href="innar-responsive-dashboard-citas.css?v=1.7.154">
-  <link rel="stylesheet" href="innar-electro-estudio-ui.css?v=1.7.154">
-  <link rel="stylesheet" href="innar-electro-calendario.css?v=1.7.154">
-  <link rel="stylesheet" href="innar-chat-messenger.css?v=1.7.154">
-  <link rel="stylesheet" href="innar-backup.css?v=1.7.154">
-  <link rel="stylesheet" href="innar-documentos-cita.css?v=1.7.154">
-  <link rel="stylesheet" href="innar-persona-fidu.css?v=1.7.154">
-  <link rel="stylesheet" href="innar-anexo-fidu.css?v=1.7.154">
-  <link rel="stylesheet" href="llamado-pacientes.css?v=1.7.154">
-  <link rel="stylesheet" href="innar-responsive-mobile-fix.css?v=1.7.154">
+  <link rel="preload" as="style" href="style.css?v=1.7.157">
+  <link rel="stylesheet" href="style.css?v=1.7.157">
+  <link rel="stylesheet" href="innar-buttons.css?v=1.7.157">
+  <link rel="stylesheet" href="innar-theme.css?v=1.7.157">
+  <link rel="stylesheet" href="innar-motion.css?v=1.7.157">
+  <link rel="stylesheet" href="innar-scroll.css?v=1.7.157">
+  <link rel="stylesheet" href="innar-sidebar.css?v=1.7.157">
+  <link rel="stylesheet" href="innar-mobile.css?v=1.7.157">
+  <link rel="stylesheet" href="innar-agenda-cal.css?v=1.7.157">
+  <link rel="stylesheet" href="innar-sesiones-multi.css?v=1.7.157">
+  <link rel="stylesheet" href="sede-recordatorio.css?v=1.7.157">
+  <link rel="stylesheet" href="soportes.css?v=1.7.157">
+  <link rel="stylesheet" href="soportes-pdf-editor.css?v=1.7.157">
+  <link rel="stylesheet" href="innar-responsive.css?v=1.7.157">
+  <link rel="stylesheet" href="innar-responsive-shell.css?v=1.7.157">
+  <link rel="stylesheet" href="innar-responsive-recibos.css?v=1.7.157">
+  <link rel="stylesheet" href="innar-responsive-agenda-medica.css?v=1.7.157">
+  <link rel="stylesheet" href="innar-responsive-electro.css?v=1.7.157">
+  <link rel="stylesheet" href="innar-responsive-usuarios.css?v=1.7.157">
+  <link rel="stylesheet" href="innar-responsive-dashboard-citas.css?v=1.7.157">
+  <link rel="stylesheet" href="innar-electro-estudio-ui.css?v=1.7.157">
+  <link rel="stylesheet" href="innar-electro-calendario.css?v=1.7.157">
+  <link rel="stylesheet" href="innar-chat-messenger.css?v=1.7.157">
+  <link rel="stylesheet" href="innar-backup.css?v=1.7.157">
+  <link rel="stylesheet" href="innar-documentos-cita.css?v=1.7.157">
+  <link rel="stylesheet" href="innar-persona-fidu.css?v=1.7.157">
+  <link rel="stylesheet" href="innar-anexo-fidu.css?v=1.7.157">
+  <link rel="stylesheet" href="llamado-pacientes.css?v=1.7.157">
+  <link rel="stylesheet" href="innar-responsive-mobile-fix.css?v=1.7.157">
   <style>
     @keyframes moveUp {
       0% { transform: translateY(8px); opacity: 0.0; }
@@ -4115,7 +4115,7 @@
           <header class="sop-module-page-header no-print">
             <div>
               <h2>Cargar reportes</h2>
-              <p class="sop-module-lead">Carpetas del mes actual (y periodo en gracia). Al cerrar el mes, o al moverlas, pasan a <strong>Reportes anteriores</strong> tal cual — mismos archivos, sin copiar ni comprimir.</p>
+              <p class="sop-module-lead">Carpetas del mes actual (y periodo en gracia). Al cerrar el mes, o al moverlas, pasan a <strong>Reportes anteriores</strong> (menú principal) — mismos PDF, sin copiar. Desde allí puede devolverlas a este módulo si el periodo aún no cerró.</p>
             </div>
             <div class="sop-module-header-actions" style="display:flex;gap:8px;flex-wrap:wrap">
               <button type="button" id="btnSopPdxPapelera" class="btn-secondary">
@@ -4181,6 +4181,7 @@
                 </button>
                 <button type="button" id="btnSopPdxClearSel" class="sop-btn sop-btn-ghost sop-btn-sm">Limpiar</button>
               </div>
+              <div id="sopPdxArchivoAviso" class="sop-inline-notice hidden" role="status" aria-live="polite"></div>
               <div id="sopPdxResultados" class="sop-search-results hidden"></div>
               <div id="sopPdxLista"><div class="sop-empty"><i data-lucide="loader" class="sop-empty-icon"></i>Cargando carpetas…</div></div>
             </div>
@@ -4262,6 +4263,7 @@
           <header class="sop-module-page-header no-print">
             <div>
               <h2>Soportes</h2>
+              <p class="sop-module-lead">Meses <strong>activos</strong> y en <strong>gracia</strong> (5 días del mes siguiente). Al cerrar, salen de esta lista — mismos archivos en disco, sin copiar. Use <strong>Meses archivados</strong> para verlos o devolverlos aquí.</p>
             </div>
             <div class="sop-module-header-actions sop-arm-header-actions">
               <button type="button" id="btnSopArmToggleNav" class="btn-secondary sop-mobile-only" aria-expanded="false" aria-controls="sopArmNavPanel">
@@ -4271,6 +4273,9 @@
                 <i data-lucide="search"></i>
                 <input type="search" id="sopArmBuscarPaciente" class="sop-search" placeholder="Paciente, documento, FE o código de carpeta…" autocomplete="off">
               </div>
+              <button type="button" id="btnSopArmMesesArchivados" class="btn-secondary" title="Ver meses que ya salieron de la lista">
+                <i data-lucide="folder-clock"></i> Meses archivados
+              </button>
               <button type="button" id="btnSopArmNuevoDia" class="btn-secondary">
                 <i data-lucide="folder-plus"></i> Carpeta de día
               </button>
@@ -4434,11 +4439,16 @@
           <header class="sop-module-page-header no-print">
             <div>
               <h2>Reportes anteriores</h2>
-              <p class="sop-module-lead">Mismas carpetas y PDFs que en Cargar reportes, de meses anteriores (tras la gracia o al moverlas). Aquí se consultan; no se generan ZIP ni copias.</p>
+              <p class="sop-module-lead">Aquí llegan las carpetas de <strong>Cargar reportes</strong> al archivarlas o al cerrar el mes. Mismos PDF (sin copiar). Si una carpeta se movió por error y su periodo aún está activo, use <strong>Devolver a Cargar reportes</strong>.</p>
             </div>
-            <button type="button" id="btnRhRefrescar" class="sop-btn sop-btn-ghost">
-              <i data-lucide="refresh-cw"></i> Actualizar
-            </button>
+            <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+              <button type="button" id="btnRhIrCargarReportes" class="sop-btn sop-btn-ghost" title="Ir a Cargar reportes">
+                <i data-lucide="folder-up"></i> Cargar reportes
+              </button>
+              <button type="button" id="btnRhRefrescar" class="sop-btn sop-btn-ghost">
+                <i data-lucide="refresh-cw"></i> Actualizar
+              </button>
+            </div>
           </header>
           <div id="rhVistaLista">
             <nav id="rhBreadcrumbLista" class="sop-breadcrumbs" aria-label="Ubicación"></nav>
@@ -4497,6 +4507,7 @@
                   <h3 id="rhDetalleTitulo" style="margin:0 0 4px"></h3>
                   <div id="rhDetalleMeta"></div>
                 </div>
+                <div id="rhDetalleAcciones" class="sop-panel-head-actions"></div>
               </div>
               <div class="sop-panel-body">
                 <div class="sop-search-wrap" style="margin:0 0 10px;max-width:420px">
@@ -4527,47 +4538,47 @@
     </div>
   </footer>
 
-  <script src="/libs/xlsx.full.min.js?v=1.7.154"></script>
-  <script src="/libs/crypto-js.min.js?v=1.7.154"></script>
-  <script src="innar-motion.js?v=1.7.154"></script>
-  <script src="innar-scroll.js?v=1.7.154"></script>
-  <script src="innar-sidebar.js?v=1.7.154"></script>
-  <script src="multiselect.js?v=1.7.154"></script>
-  <script src="socket-client.js?v=1.7.154"></script>
-  <script src="socket-electro.js?v=1.7.154"></script>
-  <script src="dashboard-citas.js?v=1.7.154"></script>
-  <script src="agenda-motivo-dia.js?v=1.7.154"></script>
-  <script src="calendario-agenda.js?v=1.7.154"></script>
-  <script src="calendario-electro.js?v=1.7.154"></script>
-  <script src="backup-module.js?v=1.7.154"></script>
-  <script src="papelera-pdx-module.js?v=1.7.154"></script>
-  <script src="/libs/lucide.min.js?v=1.7.154"></script>
-  <script src="innar-lucide.js?v=1.7.154"></script>
-  <script src="electro-estudio-tipo.js?v=1.7.154"></script>
-  <script src="persona-fidu-shared.js?v=1.7.154"></script>
-  <script src="comprobante-afiliacion.js?v=1.7.154"></script>
-  <script src="comprobante-servicio-cups.js?v=1.7.154"></script>
-  <script src="comprobante-servicio-combo.js?v=1.7.154"></script>
-  <script src="comprobante-firma-ui.js?v=1.7.154"></script>
-  <script src="comprobante-pdx-envio.js?v=1.7.154"></script>
-  <script src="documentos-cita-prefill.js?v=1.7.154"></script>
-  <script src="/libs/jspdf.umd.min.js?v=1.7.154"></script>
-  <script src="/libs/html2canvas.min.js?v=1.7.154"></script>
-  <script src="firma-quitar-fondo.js?v=1.7.154"></script>
-  <script src="documento-pdf-cliente.js?v=1.7.154"></script>
-  <script src="documentos-cita-module.js?v=1.7.154"></script>
-  <script src="agenda-reprogramacion.js?v=1.7.154"></script>
-  <script src="app.js?v=1.7.154"></script>
-  <script src="chat-messenger.js?v=1.7.154"></script>
-  <script src="soportes-busqueda-shared.js?v=1.7.154"></script>
-  <script src="anexo-fidu.js?v=1.7.154"></script>
-  <script src="soportes-pdf-editor.js?v=1.7.154"></script>
-  <script src="reportes-historico.js?v=1.7.154"></script>
-  <script src="llamado-pacientes.js?v=1.7.154"></script>
-  <script src="soportes.js?v=1.7.154"></script>
-  <script src="calendario-bloqueado.js?v=1.7.154"></script>
-  <script src="validation-client.js?v=1.7.154"></script>
-  <script src="splash.js?v=1.7.154" defer></script>
+  <script src="/libs/xlsx.full.min.js?v=1.7.157"></script>
+  <script src="/libs/crypto-js.min.js?v=1.7.157"></script>
+  <script src="innar-motion.js?v=1.7.157"></script>
+  <script src="innar-scroll.js?v=1.7.157"></script>
+  <script src="innar-sidebar.js?v=1.7.157"></script>
+  <script src="multiselect.js?v=1.7.157"></script>
+  <script src="socket-client.js?v=1.7.157"></script>
+  <script src="socket-electro.js?v=1.7.157"></script>
+  <script src="dashboard-citas.js?v=1.7.157"></script>
+  <script src="agenda-motivo-dia.js?v=1.7.157"></script>
+  <script src="calendario-agenda.js?v=1.7.157"></script>
+  <script src="calendario-electro.js?v=1.7.157"></script>
+  <script src="backup-module.js?v=1.7.157"></script>
+  <script src="papelera-pdx-module.js?v=1.7.157"></script>
+  <script src="/libs/lucide.min.js?v=1.7.157"></script>
+  <script src="innar-lucide.js?v=1.7.157"></script>
+  <script src="electro-estudio-tipo.js?v=1.7.157"></script>
+  <script src="persona-fidu-shared.js?v=1.7.157"></script>
+  <script src="comprobante-afiliacion.js?v=1.7.157"></script>
+  <script src="comprobante-servicio-cups.js?v=1.7.157"></script>
+  <script src="comprobante-servicio-combo.js?v=1.7.157"></script>
+  <script src="comprobante-firma-ui.js?v=1.7.157"></script>
+  <script src="comprobante-pdx-envio.js?v=1.7.157"></script>
+  <script src="documentos-cita-prefill.js?v=1.7.157"></script>
+  <script src="/libs/jspdf.umd.min.js?v=1.7.157"></script>
+  <script src="/libs/html2canvas.min.js?v=1.7.157"></script>
+  <script src="firma-quitar-fondo.js?v=1.7.157"></script>
+  <script src="documento-pdf-cliente.js?v=1.7.157"></script>
+  <script src="documentos-cita-module.js?v=1.7.157"></script>
+  <script src="agenda-reprogramacion.js?v=1.7.157"></script>
+  <script src="app.js?v=1.7.157"></script>
+  <script src="chat-messenger.js?v=1.7.157"></script>
+  <script src="soportes-busqueda-shared.js?v=1.7.157"></script>
+  <script src="anexo-fidu.js?v=1.7.157"></script>
+  <script src="soportes-pdf-editor.js?v=1.7.157"></script>
+  <script src="reportes-historico.js?v=1.7.157"></script>
+  <script src="llamado-pacientes.js?v=1.7.157"></script>
+  <script src="soportes.js?v=1.7.157"></script>
+  <script src="calendario-bloqueado.js?v=1.7.157"></script>
+  <script src="validation-client.js?v=1.7.157"></script>
+  <script src="splash.js?v=1.7.157" defer></script>
 
   <!-- ========== MODAL COMPLETAR PACIENTE FOMAG (base anexo) ========== -->
   <div id="modalCompletarPersonaFidu" class="modal hidden" style="position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.55);align-items:center;justify-content:center;z-index:10060;padding:16px">

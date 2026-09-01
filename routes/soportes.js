@@ -24,7 +24,8 @@ const {
   periodoToRefId,
   effectiveVisibilidad,
   ensureRegistroArchivoArmado,
-  syncRegistrosArchivoFaltantes
+  syncRegistrosArchivoFaltantes,
+  setVisibleEnSoportes
 } = require('../utils/soportes-modulo-archivo');
 const {
   detectarTemaCarpeta
@@ -352,7 +353,7 @@ async function denyPeriodoArmadoInaccesible(req, res, periodoRow, visCtx = null)
   const vis = await visArmadoPeriodo(periodoRow, visCtx);
   if (vis === 'archivo') {
     res.status(403).json({
-      error: 'Este mes está archivado y ya no está disponible en Soportes.'
+      error: 'Este mes está archivado. Ábralo desde «Meses archivados» → Devolver a Soportes.'
     });
     return true;
   }
@@ -514,6 +515,8 @@ function mapCarpetaPdx(row, visiblesSet) {
     color_tema: colorTema,
     estado_visibilidad: vis,
     archivada_manual: Boolean(row.archivada_manual),
+    // Solo se puede devolver a Cargar reportes si se archivó a mano y el periodo aún no está cerrado.
+    puede_devolver_a_cargar: Boolean(row.archivada_manual) && calcularVisibilidadPeriodo(periodo) !== 'archivo',
     dias_restantes_gracia: diasRestantesGracia(periodo),
     archivos_count: row.archivos_count || 0,
     creado_en: row.creado_en
@@ -854,6 +857,7 @@ router.get('/soportes/pdx/buscar-archivadas', requireAuth, requireRoleOrPerm(
     const visiblesSet = await loadVisibleEnSoportesSet();
     const { sql: whereSql, params: whereParams } = buildPdxBusquedaWhere(q);
     const archivos = await queryPdxBuscarArchivadasConUsuarios(whereSql, whereParams);
+    const limitHit = Array.isArray(archivos) && archivos.length >= 150;
     const resultados = archivos.filter((a) => {
       if (!usuarioVeCarpetaPdx(req, a)) return false;
       if (Number(a.archivada_manual) === 1) return true;
@@ -880,7 +884,7 @@ router.get('/soportes/pdx/buscar-archivadas', requireAuth, requireRoleOrPerm(
         editado_en: a.editado_en || null
       };
     });
-    res.json({ resultados });
+    res.json({ resultados, limit: 150, truncated: limitHit });
   } catch (e) {
     logger.error('[SOPORTES] buscar archivadas:', e);
     res.status(500).json({ error: safeError(e) });
@@ -1024,6 +1028,83 @@ router.post('/soportes/pdx/carpetas/archivar', requireAuth, requireRoleOrPerm(RO
     notifySoportesPdx({ accion: 'carpetas_archivadas', carpetaIds: archivadas.map((c) => c.id) });
   } catch (e) {
     logger.error('[SOPORTES] archivar carpetas pdx:', e);
+    res.status(500).json({ error: sopErrorCliente(e) });
+  }
+});
+
+/** Devuelve a Cargar reportes carpetas archivadas a mano cuyo periodo aún está activo/gracia. */
+router.post('/soportes/pdx/carpetas/restaurar', requireAuth, requireRoleOrPerm(ROLES_SOPORTES, ['modulo.reportes_pdx', 'soportes.pdx.editar']), async (req, res) => {
+  try {
+    const rawIds = req.body?.ids;
+    if (!Array.isArray(rawIds) || !rawIds.length) {
+      return res.status(400).json({ error: 'Seleccione al menos una carpeta' });
+    }
+    const ids = [...new Set(rawIds.map((id) => parseInt(id, 10)).filter((id) => id > 0))];
+    if (!ids.length) return res.status(400).json({ error: 'IDs de carpeta inválidos' });
+
+    const restauradas = [];
+    const omitidas = [];
+    const errores = [];
+
+    for (const id of ids) {
+      const rows = await db.query('SELECT * FROM sop_pdx_carpetas WHERE id = ?', [id]);
+      if (!rows.length) {
+        errores.push({ id, error: 'Carpeta no encontrada' });
+        continue;
+      }
+      const carpeta = rows[0];
+      const denied = denySinAccesoCarpetaPdx(req, carpeta);
+      if (denied) {
+        errores.push({ id, error: denied.error });
+        continue;
+      }
+      if (!Number(carpeta.archivada_manual)) {
+        omitidas.push({
+          id,
+          nombre_display: carpeta.nombre_display,
+          motivo: 'no_manual',
+          detalle: 'Esta carpeta está en Reportes anteriores por cierre de mes; no se archiva/restaura a mano.'
+        });
+        continue;
+      }
+      const visPeriodo = calcularVisibilidadPeriodo(carpeta.periodo);
+      if (visPeriodo === 'archivo') {
+        omitidas.push({
+          id,
+          nombre_display: carpeta.nombre_display,
+          motivo: 'periodo_cerrado',
+          detalle: 'El periodo ya cerró: la carpeta permanece en Reportes anteriores para consulta.'
+        });
+        continue;
+      }
+      await db.execute(
+        'UPDATE sop_pdx_carpetas SET archivada_manual = 0, estado_visibilidad = ? WHERE id = ?',
+        [visPeriodo, id]
+      );
+      restauradas.push({
+        id,
+        nombre_display: carpeta.nombre_display,
+        periodo: carpeta.periodo,
+        estado_visibilidad: visPeriodo
+      });
+    }
+
+    if (!restauradas.length && !omitidas.length) {
+      return res.status(400).json({
+        error: 'No se pudo devolver ninguna carpeta',
+        errores
+      });
+    }
+
+    res.json({
+      ok: true,
+      restauradas,
+      omitidas,
+      errores
+    });
+    notifySoportesPdx({ accion: 'carpetas_restauradas', carpetaIds: restauradas.map((c) => c.id) });
+  } catch (e) {
+    logger.error('[SOPORTES] restaurar carpetas pdx:', e);
     res.status(500).json({ error: sopErrorCliente(e) });
   }
 });
@@ -1390,11 +1471,11 @@ router.get('/soportes/pdx/buscar', requireAuth, requireRoleOrPerm(ROLES_SOPORTES
     const q = String(req.query.q || '').trim();
     const slotFiltro = String(req.query.slot || '').toUpperCase();
     if (q.length < 2 || !tokenizeSearchQuery(q).length) return res.json({ resultados: [] });
-    const incluirArchivo = puedeVerArchivo(req);
     const visiblesSet = await loadVisibleEnSoportesSet();
     const { sql: whereSql, params: whereParams } = buildPdxBusquedaWhere(q);
     const archivos = await db.query(
-      `SELECT a.*, c.nombre_display AS carpeta_nombre, c.periodo, c.color_tema, c.roles_visibles
+      `SELECT a.*, c.nombre_display AS carpeta_nombre, c.periodo, c.color_tema, c.roles_visibles,
+              COALESCE(c.archivada_manual, 0) AS archivada_manual
        FROM sop_pdx_archivos a
        JOIN sop_pdx_carpetas c ON c.id = a.carpeta_id
        WHERE ${whereSql}
@@ -1403,10 +1484,13 @@ router.get('/soportes/pdx/buscar', requireAuth, requireRoleOrPerm(ROLES_SOPORTES
     );
     const { resolverDestinoImportacion } = require('../utils/soportes-deposito-import');
     const { carpetaCoincideSlotDeposito } = require('../utils/soportes-deposito-filtro');
+    const limitHit = archivos.length >= 120;
     const resultados = archivos.filter((a) => {
       if (!usuarioVeCarpetaPdx(req, a)) return false;
+      // Cargar reportes: nunca devolver carpetas ya enviadas a Reportes anteriores.
+      if (Number(a.archivada_manual) === 1) return false;
       const vis = resolveVisibilidadPeriodo(a.periodo, 'pdx', periodoToRefId(a.periodo), visiblesSet);
-      if (vis === 'archivo' && !incluirArchivo) return false;
+      if (vis === 'archivo') return false;
       if (slotFiltro && !carpetaCoincideSlotDeposito(slotFiltro, a)) return false;
       return true;
     }).map((a) => {
@@ -1431,7 +1515,11 @@ router.get('/soportes/pdx/buscar', requireAuth, requireRoleOrPerm(ROLES_SOPORTES
         puede_importar_ucqn: true
       };
     });
-    res.json({ resultados });
+    res.json({
+      resultados,
+      limit: 120,
+      truncated: limitHit
+    });
   } catch (e) {
     res.status(500).json({ error: safeError(e) });
   }
@@ -1634,7 +1722,12 @@ router.patch('/soportes/pdx/archivos/:id', requireAuth, requireRoleOrPerm(ROLES_
     await logPdxArchivo(req.params.id, logTipo, req.session.usuarioId, logDetalle);
     const updated = await db.query('SELECT * FROM sop_pdx_archivos WHERE id = ?', [req.params.id]);
     res.json({ ok: true, archivo: updated[0], warnings, movido: logTipo === 'movimiento' });
-    notifySoportesPdx({ accion: logTipo === 'movimiento' ? 'archivo_movido' : 'archivo_editado', archivoId: parseInt(req.params.id, 10) });
+    notifySoportesPdx({
+      accion: logTipo === 'movimiento' ? 'archivo_movido' : 'archivo_editado',
+      archivoId: parseInt(req.params.id, 10),
+      carpetaId: carpetaId || prev.carpeta_id,
+      carpetaIdAnterior: prev.carpeta_id
+    });
   } catch (e) {
     logger.error('[SOPORTES] editar archivo pdx:', e);
     res.status(500).json({ error: safeError(e) });
@@ -1674,7 +1767,11 @@ router.delete('/soportes/pdx/archivos/:id', requireAuth, requireRoleOrPerm(ROLES
     }
     await db.execute('DELETE FROM sop_pdx_archivos WHERE id = ?', [req.params.id]);
     res.json({ ok: true, papelera: true, papelera_id: papeleraId });
-    notifySoportesPdx({ accion: 'archivo_eliminado', archivoId: parseInt(req.params.id, 10) });
+    notifySoportesPdx({
+      accion: 'archivo_eliminado',
+      archivoId: parseInt(req.params.id, 10),
+      carpetaId: row.carpeta_id
+    });
   } catch (e) {
     res.status(500).json({ error: safeError(e) });
   }
@@ -2160,17 +2257,39 @@ function mapContenedor(row) {
 
 function mapPeriodo(row, visCtx) {
   const periodo = row.periodo;
+  const calc = calcularVisibilidadPeriodo(periodo);
   const vis = visCtx
     ? resolveVisibilidadArmadoRow(row, visCtx)
-    : calcularVisibilidadPeriodo(periodo);
+    : calc;
   return {
     id: row.id,
     periodo,
     etiqueta: row.etiqueta,
     estado_visibilidad: vis,
+    estado_calendario: calc,
+    // Calendario ya cerró, pero se forzó de nuevo en Soportes (visible_en_soportes).
+    restaurado_en_soportes: calc === 'archivo' && vis !== 'archivo',
     dias_restantes_gracia: diasRestantesGracia(periodo),
     expedientes_count: row.expedientes_count || 0
   };
+}
+
+async function findRegistroArchivoArmadoId(periodoRow) {
+  if (!periodoRow?.id) return null;
+  await ensureRegistroArchivoArmado(periodoRow, null);
+  let rows = await db.query(
+    'SELECT id FROM sop_modulo_archivo WHERE modulo = ? AND ref_id = ? LIMIT 1',
+    ['armado', periodoRow.id]
+  );
+  if (rows.length) return rows[0].id;
+  if (periodoRow.periodo) {
+    rows = await db.query(
+      'SELECT id FROM sop_modulo_archivo WHERE modulo = ? AND periodo = ? LIMIT 1',
+      ['armado', periodoRow.periodo]
+    );
+    if (rows.length) return rows[0].id;
+  }
+  return null;
 }
 
 router.get('/soportes/armado/periodos', requireAuth, requireRoleOrPerm(ROLES_SOPORTES, 'modulo.armado_soportes'), async (req, res) => {
@@ -2187,11 +2306,156 @@ router.get('/soportes/armado/periodos', requireAuth, requireRoleOrPerm(ROLES_SOP
     }
     await syncRegistrosArchivoFaltantes(req.session?.usuarioId || null);
     const visCtx = await loadVisibleEnSoportesCtx();
-    const incluirArchivo = false;
-    const lista = rows.map((r) => mapPeriodo(r, visCtx)).filter((p) => p.estado_visibilidad !== 'archivo' || incluirArchivo);
+    const lista = rows.map((r) => mapPeriodo(r, visCtx)).filter((p) => p.estado_visibilidad !== 'archivo');
     res.json({ periodos: lista });
   } catch (e) {
     res.status(500).json({ error: safeError(e) });
+  }
+});
+
+/** Meses que ya cerraron y no están forzados visibles en Soportes. */
+router.get('/soportes/armado/periodos-archivados', requireAuth, requireRoleOrPerm(ROLES_SOPORTES, 'modulo.armado_soportes'), async (req, res) => {
+  try {
+    const rows = await db.query(`
+      SELECT p.*, COUNT(DISTINCT e.id) AS expedientes_count
+      FROM sop_periodos p
+      LEFT JOIN sop_dias d ON d.periodo_id = p.id
+      LEFT JOIN sop_expedientes e ON e.dia_id = d.id OR e.contenedor_id IN (SELECT id FROM sop_contenedores WHERE dia_id = d.id)
+      GROUP BY p.id ORDER BY p.periodo DESC
+    `);
+    for (const r of rows) {
+      await refrescarVisibilidadArmado(r.periodo, req.session?.usuarioId || null);
+    }
+    await syncRegistrosArchivoFaltantes(req.session?.usuarioId || null);
+    const visCtx = await loadVisibleEnSoportesCtx();
+    const periodos = rows
+      .map((r) => mapPeriodo(r, visCtx))
+      .filter((p) => p.estado_visibilidad === 'archivo');
+    res.json({ periodos });
+  } catch (e) {
+    logger.error('[SOPORTES] listar periodos archivados:', e);
+    res.status(500).json({ error: sopErrorCliente(e) });
+  }
+});
+
+/**
+ * Devuelve meses archivados a la lista de Soportes (visible_en_soportes=1).
+ * Los archivos no se mueven: solo vuelven a verse/editarse aquí.
+ */
+router.post('/soportes/armado/periodos/restaurar', requireAuth, requireRoleOrPerm(ROLES_SOPORTES, ['modulo.armado_soportes', 'soportes.armado.crear_estructura']), async (req, res) => {
+  try {
+    const rawIds = req.body?.ids;
+    if (!Array.isArray(rawIds) || !rawIds.length) {
+      return res.status(400).json({ error: 'Seleccione al menos un mes' });
+    }
+    const ids = [...new Set(rawIds.map((id) => parseInt(id, 10)).filter((id) => id > 0))];
+    if (!ids.length) return res.status(400).json({ error: 'IDs de periodo inválidos' });
+
+    const restaurados = [];
+    const omitidos = [];
+    const errores = [];
+
+    for (const id of ids) {
+      const rows = await db.query('SELECT * FROM sop_periodos WHERE id = ?', [id]);
+      if (!rows.length) {
+        errores.push({ id, error: 'Periodo no encontrado' });
+        continue;
+      }
+      const periodo = rows[0];
+      const calc = calcularVisibilidadPeriodo(periodo.periodo);
+      if (calc !== 'archivo') {
+        omitidos.push({
+          id,
+          etiqueta: periodo.etiqueta || periodo.periodo,
+          motivo: 'no_archivado',
+          detalle: 'Este mes aún está activo o en gracia; ya aparece en Soportes.'
+        });
+        continue;
+      }
+      const regId = await findRegistroArchivoArmadoId(periodo);
+      if (!regId) {
+        errores.push({ id, error: 'No se pudo registrar el mes en archivo' });
+        continue;
+      }
+      await setVisibleEnSoportes(regId, true);
+      restaurados.push({
+        id: periodo.id,
+        periodo: periodo.periodo,
+        etiqueta: periodo.etiqueta || periodo.periodo
+      });
+    }
+
+    if (!restaurados.length && !omitidos.length) {
+      return res.status(400).json({ error: 'No se pudo devolver ningún mes', errores });
+    }
+
+    res.json({ ok: true, restaurados, omitidos, errores });
+    notifySoportesArmado({
+      accion: 'periodos_restaurados',
+      periodoIds: restaurados.map((p) => p.id)
+    });
+  } catch (e) {
+    logger.error('[SOPORTES] restaurar periodos armado:', e);
+    res.status(500).json({ error: sopErrorCliente(e) });
+  }
+});
+
+/** Quita de la lista de Soportes un mes restaurado (vuelve a Meses archivados). */
+router.post('/soportes/armado/periodos/ocultar-archivo', requireAuth, requireRoleOrPerm(ROLES_SOPORTES, ['modulo.armado_soportes', 'soportes.armado.crear_estructura']), async (req, res) => {
+  try {
+    const rawIds = req.body?.ids;
+    if (!Array.isArray(rawIds) || !rawIds.length) {
+      return res.status(400).json({ error: 'Seleccione al menos un mes' });
+    }
+    const ids = [...new Set(rawIds.map((id) => parseInt(id, 10)).filter((id) => id > 0))];
+    if (!ids.length) return res.status(400).json({ error: 'IDs de periodo inválidos' });
+
+    const ocultados = [];
+    const omitidos = [];
+    const errores = [];
+
+    for (const id of ids) {
+      const rows = await db.query('SELECT * FROM sop_periodos WHERE id = ?', [id]);
+      if (!rows.length) {
+        errores.push({ id, error: 'Periodo no encontrado' });
+        continue;
+      }
+      const periodo = rows[0];
+      const calc = calcularVisibilidadPeriodo(periodo.periodo);
+      if (calc !== 'archivo') {
+        omitidos.push({
+          id,
+          etiqueta: periodo.etiqueta || periodo.periodo,
+          motivo: 'periodo_activo',
+          detalle: 'Solo se pueden volver a archivar meses cuyo calendario ya cerró.'
+        });
+        continue;
+      }
+      const regId = await findRegistroArchivoArmadoId(periodo);
+      if (!regId) {
+        errores.push({ id, error: 'Registro de archivo no encontrado' });
+        continue;
+      }
+      await setVisibleEnSoportes(regId, false);
+      ocultados.push({
+        id: periodo.id,
+        periodo: periodo.periodo,
+        etiqueta: periodo.etiqueta || periodo.periodo
+      });
+    }
+
+    if (!ocultados.length && !omitidos.length) {
+      return res.status(400).json({ error: 'No se pudo ocultar ningún mes', errores });
+    }
+
+    res.json({ ok: true, ocultados, omitidos, errores });
+    notifySoportesArmado({
+      accion: 'periodos_ocultados',
+      periodoIds: ocultados.map((p) => p.id)
+    });
+  } catch (e) {
+    logger.error('[SOPORTES] ocultar periodos armado:', e);
+    res.status(500).json({ error: sopErrorCliente(e) });
   }
 });
 

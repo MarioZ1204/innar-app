@@ -269,9 +269,73 @@
     if (!root) return;
     root.querySelectorAll('[data-rh-carpeta]').forEach((card) => {
       const open = () => abrirCarpeta(parseInt(card.dataset.rhCarpeta, 10));
-      card.addEventListener('click', open);
-      card.addEventListener('keydown', (ev) => { if (ev.key === 'Enter') open(); });
+      card.addEventListener('click', (ev) => {
+        if (ev.target.closest('[data-rh-devolver]')) return;
+        open();
+      });
+      card.addEventListener('keydown', (ev) => {
+        if (ev.key === 'Enter' && !ev.target.closest('[data-rh-devolver]')) open();
+      });
     });
+    root.querySelectorAll('[data-rh-devolver]').forEach((btn) => {
+      btn.addEventListener('click', (ev) => {
+        ev.stopPropagation();
+        const id = parseInt(btn.dataset.rhDevolver, 10);
+        devolverCarpetaACargarReportes(id).catch((e) => sopToast(e.message, 'error'));
+      });
+    });
+  }
+
+  function puedeEditarPdx() {
+    return typeof window.tienePermiso === 'function' && window.tienePermiso('soportes.pdx.editar');
+  }
+
+  async function devolverCarpetaACargarReportes(carpetaId) {
+    const id = parseInt(carpetaId, 10);
+    if (!id) return;
+    if (!puedeEditarPdx()) {
+      sopToast('Sin permiso para devolver carpetas', 'error');
+      return;
+    }
+    const carpeta = state.carpetas.find((c) => Number(c.id) === id) || state.carpetaActual;
+    const nombre = carpeta?.nombre_display || 'esta carpeta';
+    const run = async () => {
+      const res = await apiFetch('/api/soportes/pdx/carpetas/restaurar', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids: [id] })
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        sopToast(data.error || 'No se pudo devolver la carpeta', 'error');
+        return;
+      }
+      const ok = (data.restauradas || []).length;
+      const omit = data.omitidas || [];
+      if (ok) {
+        sopToast(`«${nombre}» volvió a Cargar reportes`, 'success');
+        if (Number(state.carpetaId) === id) volverLista();
+        await cargarCarpetas({ silent: true });
+        renderLista();
+        if (typeof goToModule === 'function') {
+          const ir = window.confirm('¿Abrir Cargar reportes ahora?');
+          if (ir) goToModule('reportes-pdx');
+        }
+      } else if (omit.length) {
+        sopToast(omit[0].detalle || 'No se puede devolver esta carpeta a Cargar reportes', 'warning');
+      } else {
+        sopToast('No se devolvió ninguna carpeta', 'warning');
+      }
+    };
+    if (typeof window.confirmEliminar === 'function') {
+      window.confirmEliminar(
+        `¿Devolver «${nombre}» a Cargar reportes?`,
+        run,
+        { okText: 'Devolver', cancelText: 'Cancelar' }
+      );
+    } else if (window.confirm(`¿Devolver «${nombre}» a Cargar reportes?`)) {
+      await run();
+    }
   }
 
   function renderLista() {
@@ -282,11 +346,12 @@
     const lista = carpetasFiltradas();
     const chip = $('rhChipResumen');
     if (chip) {
-      chip.innerHTML = `<span class="sop-stat-chip"><i data-lucide="folder-clock"></i> <strong>${state.carpetas.length}</strong> carpetas de meses anteriores</span>`;
+      chip.innerHTML = `<span class="sop-stat-chip"><i data-lucide="folder-clock"></i> <strong>${state.carpetas.length}</strong> carpetas en archivo</span>
+        <span class="sop-stat-chip"><i data-lucide="info"></i> Ver/consultar aquí · Devolver solo si el periodo sigue activo</span>`;
       sopIcons(chip);
     }
     if (!state.carpetas.length) {
-      el.innerHTML = `<div class="sop-empty"><i data-lucide="folder-clock" class="sop-empty-icon"></i>Aún no hay carpetas de meses anteriores.<br><span style="font-size:.85rem">Aparecen aquí al cerrar el mes (5 días de gracia) o al moverlas desde Cargar reportes — mismos archivos, sin copiar.</span></div>`;
+      el.innerHTML = `<div class="sop-empty"><i data-lucide="folder-clock" class="sop-empty-icon"></i>Aún no hay carpetas aquí.<br><span style="font-size:.85rem">Llegan desde <strong>Cargar reportes</strong> al moverlas o al cerrar el mes (tras 5 días de gracia). Los PDF no se copian ni se borran.</span></div>`;
       sopIcons(el);
       return;
     }
@@ -295,22 +360,31 @@
       sopIcons(el);
       return;
     }
+    const canEdit = puedeEditarPdx();
     el.innerHTML = `<div class="sop-grid">${lista.map((c) => {
       const tema = c.color_tema || 'neutral';
       const icon = TEMA_ICON[tema] || 'folder';
+      const badge = c.archivada_manual
+        ? '<span class="sop-badge sop-badge-archivo"><i data-lucide="folder-input" style="width:12px;height:12px"></i> Movida a mano</span>'
+        : '<span class="sop-badge sop-badge-archivo"><i data-lucide="folder-clock" style="width:12px;height:12px"></i> Mes cerrado</span>';
+      const btnDevolver = (canEdit && c.puede_devolver_a_cargar)
+        ? `<button type="button" class="sop-btn sop-btn-ghost sop-btn-sm" data-rh-devolver="${c.id}" title="Devolver a Cargar reportes"><i data-lucide="folder-up"></i> Devolver</button>`
+        : '';
       return `<article class="sop-folder-card" data-tema="${escapeHtml(tema)}" data-rh-carpeta="${c.id}" tabindex="0">
         <div class="sop-folder-icon"><i data-lucide="${icon}"></i></div>
         <div class="sop-folder-title">${escapeHtml(c.nombre_display)}</div>
         <div class="sop-folder-meta">${escapeHtml(c.periodo)} · ${c.archivos_count || 0} archivo(s)</div>
-        <span class="sop-badge sop-badge-archivo"><i data-lucide="folder-clock" style="width:12px;height:12px"></i> Mes anterior</span>
+        ${badge}
+        ${btnDevolver ? `<div class="sop-folder-actions" style="margin-top:8px">${btnDevolver}</div>` : ''}
       </article>`;
     }).join('')}</div>`;
     bindCarpetaEvents(el);
     sopIcons(el);
   }
 
-  async function cargarCarpetas() {
-    showSkeletonGrid($('rhLista'), 6);
+  async function cargarCarpetas(opts = {}) {
+    const silent = !!opts.silent;
+    if (!silent) showSkeletonGrid($('rhLista'), 6);
     const res = await apiFetch('/api/soportes/pdx/carpetas-archivadas');
     const data = await res.json();
     if (res.status === 401) return null;
@@ -318,6 +392,101 @@
     state.carpetas = data.carpetas || [];
     actualizarFiltroPeriodos();
     return data;
+  }
+
+  async function recargarArchivosSilencioso(carpetaId) {
+    const id = parseInt(carpetaId, 10);
+    if (!id || Number(state.carpetaId) !== id) return false;
+    const res = await apiFetch(`/api/soportes/pdx/carpetas/${id}/archivos`);
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) return false;
+    const filtro = state.filtroArchivos || '';
+    state.archivos = (data.archivos || []).slice().sort((a, b) => {
+      const fa = a.fecha_estudio || '';
+      const fb = b.fecha_estudio || '';
+      return fb.localeCompare(fa);
+    });
+    if (data.carpeta) {
+      state.carpetaActual = data.carpeta;
+      const meta = $('rhDetalleMeta');
+      if (meta) {
+        meta.innerHTML = `${escapeHtml(data.carpeta.periodo)} · <span class="sop-badge sop-badge-archivo">Mes anterior</span>`;
+        sopIcons(meta);
+      }
+      const titulo = $('rhDetalleTitulo');
+      if (titulo) titulo.textContent = data.carpeta.nombre_display || '';
+    }
+    state.filtroArchivos = filtro;
+    renderArchivosRh();
+    return true;
+  }
+
+  function setupFiltros() {
+    const syncNow = () => {
+      state.filtros.texto = $('rhFiltroTexto')?.value || '';
+      state.filtros.periodo = $('rhFiltroPeriodo')?.value || '';
+      state.filtros.tema = $('rhFiltroTema')?.value || '';
+      state.filtros.orden = $('rhFiltroOrden')?.value || 'periodo_desc';
+      renderLista();
+    };
+    let textoTimer;
+    $('rhFiltroTexto')?.addEventListener('input', () => {
+      clearTimeout(textoTimer);
+      textoTimer = setTimeout(syncNow, 180);
+    });
+    $('rhFiltroPeriodo')?.addEventListener('change', syncNow);
+    $('rhFiltroTema')?.addEventListener('change', syncNow);
+    $('rhFiltroOrden')?.addEventListener('change', syncNow);
+    const ordenSel = $('rhFiltroOrden');
+    if (ordenSel) ordenSel.value = state.filtros.orden;
+  }
+
+  async function refrescar(opts = {}) {
+    const soft = opts.soft !== false;
+    const remoteCarpeta = parseInt(opts.carpetaId || opts.carpeta_id, 10) || null;
+    const remoteIds = Array.isArray(opts.carpetaIds)
+      ? opts.carpetaIds.map((id) => parseInt(id, 10)).filter((id) => id > 0)
+      : [];
+
+    if (
+      (opts.accion === 'carpetas_archivadas' || opts.accion === 'carpetas_restauradas')
+      && (!state.carpetaId || remoteIds.includes(Number(state.carpetaId)))
+    ) {
+      if (opts.accion === 'carpetas_restauradas' && state.carpetaId && remoteIds.includes(Number(state.carpetaId))) {
+        volverLista();
+      }
+      await cargarCarpetas({ silent: true }).catch(() => null);
+      renderLista();
+      return;
+    }
+
+    if (
+      soft
+      && remoteCarpeta
+      && state.carpetaId
+      && Number(remoteCarpeta) !== Number(state.carpetaId)
+    ) {
+      if (!$('rhVistaDetalle') || $('rhVistaDetalle').classList.contains('hidden')) {
+        await cargarCarpetas({ silent: true }).catch(() => null);
+        renderLista();
+      }
+      return;
+    }
+    if (soft && state.carpetaId) {
+      const ok = await recargarArchivosSilencioso(state.carpetaId);
+      if (ok) return;
+    }
+    const data = await cargarCarpetas({ silent: soft });
+    if (!data) return;
+    if (state.carpetaId) {
+      if (soft) {
+        const ok = await recargarArchivosSilencioso(state.carpetaId);
+        if (ok) return;
+      }
+      await abrirCarpeta(state.carpetaId);
+    } else {
+      renderLista();
+    }
   }
 
   function volverLista() {
@@ -433,7 +602,10 @@
     const c = data.carpeta;
     state.carpetaActual = c;
     $('rhDetalleTitulo').textContent = c.nombre_display;
-    $('rhDetalleMeta').innerHTML = `${escapeHtml(c.periodo)} · <span class="sop-badge sop-badge-archivo">Mes anterior</span>`;
+    const badgeDetalle = c.archivada_manual
+      ? '<span class="sop-badge sop-badge-archivo">Movida a mano</span>'
+      : '<span class="sop-badge sop-badge-archivo">Mes cerrado</span>';
+    $('rhDetalleMeta').innerHTML = `${escapeHtml(c.periodo)} · ${badgeDetalle}`;
     sopIcons($('rhDetalleMeta'));
     const colEst = $('rhColEstudio');
     if (colEst) {
@@ -444,6 +616,22 @@
       colEst.textContent = esCons ? 'Especialidad / Tipo de consulta' : 'Tipo de estudio';
     }
     renderBreadcrumbDetalle(c);
+    const acciones = $('rhDetalleAcciones');
+    if (acciones) {
+      if (puedeEditarPdx() && c.puede_devolver_a_cargar) {
+        acciones.innerHTML = `<button type="button" class="sop-btn sop-btn-ghost sop-btn-sm" id="btnRhDevolverCarpeta" title="Devolver a Cargar reportes">
+          <i data-lucide="folder-up"></i> Devolver a Cargar reportes
+        </button>`;
+        acciones.querySelector('#btnRhDevolverCarpeta')?.addEventListener('click', () => {
+          devolverCarpetaACargarReportes(c.id).catch((e) => sopToast(e.message, 'error'));
+        });
+        sopIcons(acciones);
+      } else {
+        acciones.innerHTML = c.archivada_manual
+          ? `<span class="sop-search-results-meta">Periodo cerrado: solo consulta aquí</span>`
+          : `<span class="sop-search-results-meta">Archivo por cierre de mes · solo consulta</span>`;
+      }
+    }
     renderArchivosRh();
   }
 
@@ -454,11 +642,18 @@
     el.innerHTML = '';
   }
 
+  let rhBuscarAbort = null;
+  let rhBuscarSeq = 0;
+
   async function buscarPaciente() {
     const q = $('rhBuscar')?.value?.trim();
     const el = $('rhResultados');
     if (!el) return;
     if (!q || q.length < 2) {
+      if (rhBuscarAbort) {
+        try { rhBuscarAbort.abort(); } catch (_) { /* noop */ }
+        rhBuscarAbort = null;
+      }
       cerrarBusqueda();
       return;
     }
@@ -466,69 +661,91 @@
     el.innerHTML = `<div class="sop-search-results-head"><h4>Resultados</h4><span class="sop-search-results-meta">Buscando…</span></div>
       <div class="sop-search-results-body"><div class="sop-empty" style="padding:24px"><i data-lucide="loader" class="sop-empty-icon"></i></div></div>`;
     sopIcons(el);
-    const res = await apiFetch(`/api/soportes/pdx/buscar-archivadas?q=${encodeURIComponent(q)}`);
-    const data = await res.json();
-    if (!res.ok) {
-      sopToast(data.error || 'Error en la búsqueda', 'error');
-      cerrarBusqueda();
-      return;
+
+    if (rhBuscarAbort) {
+      try { rhBuscarAbort.abort(); } catch (_) { /* noop */ }
     }
-    const list = data.resultados || [];
-    if (!list.length) {
+    const ac = typeof AbortController !== 'undefined' ? new AbortController() : null;
+    rhBuscarAbort = ac;
+    const seq = ++rhBuscarSeq;
+
+    try {
+      const res = await apiFetch(
+        `/api/soportes/pdx/buscar-archivadas?q=${encodeURIComponent(q)}`,
+        ac ? { signal: ac.signal } : undefined
+      );
+      const data = await res.json().catch(() => ({}));
+      if (seq !== rhBuscarSeq) return;
+      if (!res.ok) {
+        sopToast(data.error || 'Error en la búsqueda', 'error');
+        cerrarBusqueda();
+        return;
+      }
+      const list = data.resultados || [];
+      const truncated = !!data.truncated;
+      if (!list.length) {
+        el.innerHTML = `<div class="sop-search-results-head">
+            <h4>Resultados</h4>
+            <span class="sop-search-results-meta">Sin coincidencias</span>
+            <button type="button" class="sop-btn sop-btn-ghost sop-btn-sm" data-rh-close-search><i data-lucide="x"></i> Cerrar</button>
+          </div>
+          <div class="sop-search-results-body"><div class="sop-empty" style="padding:20px">No se encontraron reportes archivados para «${escapeHtml(q)}»</div></div>`;
+        el.querySelector('[data-rh-close-search]')?.addEventListener('click', cerrarBusqueda);
+        sopIcons(el);
+        return;
+      }
+      const metaTxt = truncated
+        ? `Mostrando ${list.length} (hay más; afina la búsqueda)`
+        : `${list.length} encontrado${list.length !== 1 ? 's' : ''}`;
       el.innerHTML = `<div class="sop-search-results-head">
           <h4>Resultados</h4>
-          <span class="sop-search-results-meta">Sin coincidencias</span>
+          <span class="sop-search-results-meta">${metaTxt}</span>
           <button type="button" class="sop-btn sop-btn-ghost sop-btn-sm" data-rh-close-search><i data-lucide="x"></i> Cerrar</button>
         </div>
-        <div class="sop-search-results-body">        <div class="sop-empty" style="padding:20px">No se encontraron reportes para «${escapeHtml(q)}»</div></div>`;
+        <div class="sop-search-results-body">
+          <div class="sop-table-wrap"><table class="sop-table"><thead><tr>
+            <th>Paciente</th><th>Doc.</th><th>Estudio</th><th>Fecha</th><th>Carpeta</th><th></th></tr></thead><tbody>
+            ${list.map((r) => `<tr>
+              <td><strong>${escapeHtml(r.paciente_nombre)}</strong>
+                ${r.nombre_descarga || r.nombre_archivo_display ? `<div class="sop-search-results-meta">${escapeHtml(r.nombre_descarga || r.nombre_archivo_display)}</div>` : ''}
+                ${htmlMetaAuditoria(r)}</td>
+              <td>${escapeHtml(r.paciente_documento || '—')}</td>
+              <td>${escapeHtml(r.estudio_texto || '—')}</td>
+              <td>${escapeHtml(r.fecha_estudio || '—')}</td>
+              <td>${escapeHtml(r.carpeta_nombre)} <span class="sop-search-results-meta">(${escapeHtml(r.periodo)})</span></td>
+              <td style="white-space:nowrap">
+                <button type="button" class="sop-btn sop-btn-ghost sop-btn-sm" data-rh-open-archivo="${r.archivo_id}" title="Ver PDF"><i data-lucide="external-link"></i></button>
+                <button type="button" class="sop-btn sop-btn-ghost sop-btn-sm" data-rh-hist="${r.archivo_id}" title="Historial"><i data-lucide="history"></i></button>
+                <button type="button" class="sop-btn sop-btn-ghost sop-btn-sm" data-rh-open-carpeta="${r.carpeta_id}" title="Abrir carpeta"><i data-lucide="folder-open"></i></button>
+              </td>
+            </tr>`).join('')}
+          </tbody></table></div>
+        </div>`;
       el.querySelector('[data-rh-close-search]')?.addEventListener('click', cerrarBusqueda);
+      el.querySelectorAll('[data-rh-open-archivo]').forEach((b) => {
+        b.addEventListener('click', () => {
+          const id = parseInt(b.dataset.rhOpenArchivo, 10);
+          const row = list.find((x) => x.archivo_id === id);
+          const titulo = row?.nombre_descarga || row?.paciente_nombre || 'Reporte';
+          abrirPdf(`/api/soportes/pdx/archivos/${id}/ver`, titulo);
+        });
+      });
+      el.querySelectorAll('[data-rh-hist]').forEach((b) => {
+        b.addEventListener('click', () => {
+          const id = parseInt(b.dataset.rhHist, 10);
+          const row = list.find((x) => x.archivo_id === id);
+          modalHistorialRh(id, row?.paciente_nombre || 'Reporte');
+        });
+      });
+      el.querySelectorAll('[data-rh-open-carpeta]').forEach((b) => {
+        b.addEventListener('click', () => abrirCarpeta(parseInt(b.dataset.rhOpenCarpeta, 10)));
+      });
       sopIcons(el);
-      return;
+    } catch (e) {
+      if (e?.name === 'AbortError') return;
+      if (seq !== rhBuscarSeq) return;
+      sopToast(e.message || 'No se pudo buscar', 'error');
     }
-    el.innerHTML = `<div class="sop-search-results-head">
-        <h4>Resultados</h4>
-        <span class="sop-search-results-meta">${list.length} encontrado${list.length !== 1 ? 's' : ''}</span>
-        <button type="button" class="sop-btn sop-btn-ghost sop-btn-sm" data-rh-close-search><i data-lucide="x"></i> Cerrar</button>
-      </div>
-      <div class="sop-search-results-body">
-        <div class="sop-table-wrap"><table class="sop-table"><thead><tr>
-          <th>Paciente</th><th>Doc.</th><th>Estudio</th><th>Fecha</th><th>Carpeta</th><th></th></tr></thead><tbody>
-          ${list.map((r) => `<tr>
-            <td><strong>${escapeHtml(r.paciente_nombre)}</strong>
-              ${r.nombre_descarga || r.nombre_archivo_display ? `<div class="sop-search-results-meta">${escapeHtml(r.nombre_descarga || r.nombre_archivo_display)}</div>` : ''}
-              ${htmlMetaAuditoria(r)}</td>
-            <td>${escapeHtml(r.paciente_documento || '—')}</td>
-            <td>${escapeHtml(r.estudio_texto || '—')}</td>
-            <td>${escapeHtml(r.fecha_estudio || '—')}</td>
-            <td>${escapeHtml(r.carpeta_nombre)} <span class="sop-search-results-meta">(${escapeHtml(r.periodo)})</span></td>
-            <td style="white-space:nowrap">
-              <button type="button" class="sop-btn sop-btn-ghost sop-btn-sm" data-rh-open-archivo="${r.archivo_id}" title="Ver PDF"><i data-lucide="external-link"></i></button>
-              <button type="button" class="sop-btn sop-btn-ghost sop-btn-sm" data-rh-hist="${r.archivo_id}" title="Historial"><i data-lucide="history"></i></button>
-              <button type="button" class="sop-btn sop-btn-ghost sop-btn-sm" data-rh-open-carpeta="${r.carpeta_id}" title="Abrir carpeta"><i data-lucide="folder-open"></i></button>
-            </td>
-          </tr>`).join('')}
-        </tbody></table></div>
-      </div>`;
-    el.querySelector('[data-rh-close-search]')?.addEventListener('click', cerrarBusqueda);
-    el.querySelectorAll('[data-rh-open-archivo]').forEach((b) => {
-      b.addEventListener('click', () => {
-        const id = parseInt(b.dataset.rhOpenArchivo, 10);
-        const row = list.find((x) => x.archivo_id === id);
-        const titulo = row?.nombre_descarga || row?.paciente_nombre || 'Reporte';
-        abrirPdf(`/api/soportes/pdx/archivos/${id}/ver`, titulo);
-      });
-    });
-    el.querySelectorAll('[data-rh-hist]').forEach((b) => {
-      b.addEventListener('click', () => {
-        const id = parseInt(b.dataset.rhHist, 10);
-        const row = list.find((x) => x.archivo_id === id);
-        modalHistorialRh(id, row?.paciente_nombre || 'Reporte');
-      });
-    });
-    el.querySelectorAll('[data-rh-open-carpeta]').forEach((b) => {
-      b.addEventListener('click', () => abrirCarpeta(parseInt(b.dataset.rhOpenCarpeta, 10)));
-    });
-    sopIcons(el);
   }
 
   let debounceTimer;
@@ -537,40 +754,20 @@
     debounceTimer = setTimeout(() => buscarPaciente(), 320);
   }
 
-  function setupFiltros() {
-    const sync = () => {
-      state.filtros.texto = $('rhFiltroTexto')?.value || '';
-      state.filtros.periodo = $('rhFiltroPeriodo')?.value || '';
-      state.filtros.tema = $('rhFiltroTema')?.value || '';
-      state.filtros.orden = $('rhFiltroOrden')?.value || 'periodo_desc';
-      renderLista();
-    };
-    $('rhFiltroTexto')?.addEventListener('input', sync);
-    $('rhFiltroPeriodo')?.addEventListener('change', sync);
-    $('rhFiltroTema')?.addEventListener('change', sync);
-    $('rhFiltroOrden')?.addEventListener('change', sync);
-    const ordenSel = $('rhFiltroOrden');
-    if (ordenSel) ordenSel.value = state.filtros.orden;
-  }
-
-  async function refrescar() {
-    const data = await cargarCarpetas();
-    if (!data) return;
-    if (state.carpetaId) await abrirCarpeta(state.carpetaId);
-    else renderLista();
-  }
-
   function initReportesHistorico() {
     sopIcons($('view-reportes-historico'));
     if (initDone) {
-      refrescar().catch(() => {});
+      refrescar({ soft: true }).catch(() => {});
       return;
     }
     initDone = true;
     $('btnVolverReportesHistorico')?.addEventListener('click', () => {
       if (typeof window.goToMenu === 'function') window.goToMenu();
     });
-    $('btnRhRefrescar')?.addEventListener('click', () => refrescar().catch((e) => sopToast(e.message, 'error')));
+    $('btnRhRefrescar')?.addEventListener('click', () => refrescar({ soft: false }).catch((e) => sopToast(e.message, 'error')));
+    $('btnRhIrCargarReportes')?.addEventListener('click', () => {
+      if (typeof goToModule === 'function') goToModule('reportes-pdx');
+    });
     $('btnRhBuscar')?.addEventListener('click', buscarPaciente);
     $('rhBuscar')?.addEventListener('input', buscarPredictivo);
     $('rhBuscar')?.addEventListener('keydown', (e) => {

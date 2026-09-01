@@ -202,12 +202,20 @@ function refreshActiveModuleData(payload) {
     scheduleSocketRefresh('reportes-pdx', () => window.refreshReportesPdx({
       soft: true,
       carpetaId: Number.isFinite(carpetaId) && carpetaId > 0 ? carpetaId : null,
+      carpetaIds: Array.isArray(payload?.carpetaIds) ? payload.carpetaIds : null,
       path: payload?.path || null,
       accion: payload?.accion || null
     }), 500);
   }
   if (module === 'reportes-historico' && typeof window.refreshReportesHistorico === 'function') {
-    scheduleSocketRefresh('reportes-historico', () => window.refreshReportesHistorico(), 500);
+    const carpetaFromPath = String(payload?.path || '').match(/\/soportes\/pdx\/carpetas\/(\d+)/i);
+    const carpetaId = parseInt(payload?.carpetaId || payload?.carpeta_id || (carpetaFromPath && carpetaFromPath[1]), 10);
+    scheduleSocketRefresh('reportes-historico', () => window.refreshReportesHistorico({
+      soft: true,
+      carpetaId: Number.isFinite(carpetaId) && carpetaId > 0 ? carpetaId : null,
+      carpetaIds: Array.isArray(payload?.carpetaIds) ? payload.carpetaIds : null,
+      accion: payload?.accion || null
+    }), 500);
   }
   if (module === 'armado-soportes' && typeof window.refreshArmadoSoportes === 'function') {
     const expFromPath = String(payload?.path || '').match(/\/soportes\/armado\/expedientes\/(\d+)/i);
@@ -215,6 +223,7 @@ function refreshActiveModuleData(payload) {
     scheduleSocketRefresh('armado-soportes', () => window.refreshArmadoSoportes({
       soft: true,
       expedienteId: Number.isFinite(expedienteId) && expedienteId > 0 ? expedienteId : null,
+      periodoIds: Array.isArray(payload?.periodoIds) ? payload.periodoIds : null,
       path: payload?.path || null,
       accion: payload?.accion || null
     }), 500);
@@ -558,17 +567,19 @@ function registerDefaultRealtimeHandlers() {
   });
 
   subscribe('soportes:pdx-actualizado', (e) => {
+    const softOpts = {
+      soft: true,
+      carpetaId: e?.carpetaId || e?.carpeta_id || null,
+      carpetaIds: Array.isArray(e?.carpetaIds) ? e.carpetaIds : null,
+      accion: e?.accion || null
+    };
     if (window.currentModule === 'reportes-pdx' && typeof window.refreshReportesPdx === 'function') {
-      scheduleSocketRefresh('reportes-pdx', () => window.refreshReportesPdx({
-        soft: true,
-        carpetaId: e?.carpetaId || e?.carpeta_id || null,
-        accion: e?.accion || null
-      }), 500);
+      scheduleSocketRefresh('reportes-pdx', () => window.refreshReportesPdx(softOpts), 500);
     } else {
       markModuleDirty('reportes-pdx');
     }
     if (window.currentModule === 'reportes-historico' && typeof window.refreshReportesHistorico === 'function') {
-      scheduleSocketRefresh('reportes-historico', () => window.refreshReportesHistorico(), 500);
+      scheduleSocketRefresh('reportes-historico', () => window.refreshReportesHistorico(softOpts), 500);
     } else {
       markModuleDirty('reportes-historico');
     }
@@ -578,6 +589,7 @@ function registerDefaultRealtimeHandlers() {
       scheduleSocketRefresh('armado-soportes', () => window.refreshArmadoSoportes({
         soft: true,
         expedienteId: e?.expedienteId || e?.expediente_id || null,
+        periodoIds: Array.isArray(e?.periodoIds) ? e.periodoIds : null,
         accion: e?.accion || null
       }), 500);
     } else {
@@ -926,7 +938,9 @@ function initSocket() {
       if (module === 'reportes-pdx' && typeof window.refreshReportesPdx === 'function') {
         window.refreshReportesPdx({ soft: true, reason: 'visibility' });
       }
-      if (module === 'reportes-historico' && typeof window.refreshReportesHistorico === 'function') window.refreshReportesHistorico();
+      if (module === 'reportes-historico' && typeof window.refreshReportesHistorico === 'function') {
+        window.refreshReportesHistorico({ soft: true, reason: 'visibility' });
+      }
       if (module === 'armado-soportes' && typeof window.refreshArmadoSoportes === 'function') {
         window.refreshArmadoSoportes({ soft: true, reason: 'visibility' });
       }
