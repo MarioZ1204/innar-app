@@ -259,6 +259,7 @@
 
   function showSkeletonGrid(container, count) {
     if (!container) return;
+    if (typeof window.innarHasPaintedContent === 'function' && window.innarHasPaintedContent(container)) return;
     container.innerHTML = `<div class="sop-grid sop-skeleton-grid">${Array.from({ length: count || 6 }, () =>
       '<div class="sop-skeleton-block sop-skeleton-folder-card"></div>'
     ).join('')}</div>`;
@@ -562,7 +563,7 @@
   function initReportesHistorico() {
     sopIcons($('view-reportes-historico'));
     if (initDone) {
-      refrescar().catch((e) => sopToast(e.message, 'error'));
+      refrescar().catch(() => {});
       return;
     }
     initDone = true;

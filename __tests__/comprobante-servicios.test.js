@@ -64,7 +64,7 @@ describe('comprobante-servicios', () => {
     expect(r.data.tipo_documento).toBe('CC');
   });
 
-  test('requiere firma del paciente', () => {
+  test('requiere al menos una firma (paciente o acudiente)', () => {
     const r = validarPayloadComprobanteServicios({
       fecha: '2026-05-27',
       paciente_nombre: 'Test',
@@ -77,6 +77,29 @@ describe('comprobante-servicios', () => {
       servicio: 'EEG'
     });
     expect(r.error).toMatch(/firma/i);
+  });
+
+  test('acepta solo firma del acudiente, sin firma del paciente', () => {
+    const r = validarPayloadComprobanteServicios({
+      fecha: '2026-05-27',
+      paciente_nombre: 'Test Paciente',
+      paciente_documento: '1234567890',
+      fecha_nacimiento: '2000-01-01',
+      direccion: 'Calle 1',
+      telefono: '3001234567',
+      correo: 'test@example.com',
+      tipo_afiliacion: 'Cotizante',
+      servicio: 'EEG convencional',
+      firma_acudiente: FIRMA_MINI,
+      acudiente_nombre: 'Acudiente Test',
+      parentesco: 'Madre'
+    });
+    expect(r.error).toBeUndefined();
+    expect(r.data.firma_paciente).toBeFalsy();
+    expect(r.data.firma_acudiente).toBeTruthy();
+    const html = buildComprobanteServiciosHtml(r.data);
+    expect(html).not.toContain('alt="Firma del paciente"');
+    expect(html).toContain('alt="Firma acudiente"');
   });
 
   test('conserva el texto libre del servicio sin mapear al catálogo CUPS', () => {

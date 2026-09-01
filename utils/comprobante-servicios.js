@@ -153,8 +153,8 @@ function validarPayloadComprobanteServicios(body = {}) {
   if (!tipoAfiliacion) return { error: 'El tipo de afiliación es obligatorio' };
   if (!servicio) return { error: 'El servicio prestado es obligatorio' };
 
-  if (!firmaPaciente) {
-    return { error: 'La firma del paciente (imagen) es obligatoria' };
+  if (!firmaPaciente && !firmaAcudiente) {
+    return { error: 'Debe cargar la firma del paciente o la del acudiente' };
   }
 
   return {
@@ -218,6 +218,9 @@ function buildComprobanteServiciosHtml(data, fondo = {}, opciones = {}) {
   const fontFamily = "Arial, 'Helvetica Neue', Helvetica, sans-serif";
   const fondoPagina = capaFondoSeparada ? 'transparent' : '#fff';
 
+  const firmaPacHtml = firmaPac
+    ? `<img src="data:${firmaPac.mime};base64,${firmaPac.base64}" alt="Firma del paciente"/>`
+    : '';
   const firmaAcudHtml = firmaAcud
     ? `<img class="cmp-firma-acud-img" src="data:${firmaAcud.mime};base64,${firmaAcud.base64}" alt="Firma acudiente"/>`
     : '';
@@ -552,7 +555,7 @@ function buildComprobanteServiciosHtml(data, fondo = {}, opciones = {}) {
     ${lineaFirmaCoverHtml}
     <div class="cmp-linea-firma-punteada" aria-hidden="true"></div>
     <div class="cmp-firma-paciente">
-      <img src="data:${firmaPac.mime};base64,${firmaPac.base64}" alt="Firma del paciente"/>
+      ${firmaPacHtml}
     </div>
 
     <div class="cmp-acudiente${acudienteOcultoClass}">

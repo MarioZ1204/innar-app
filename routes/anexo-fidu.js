@@ -5,8 +5,12 @@ const express = require('express');
 const router = express.Router();
 const db = require('../utils/db-mysql');
 const logger = require('../utils/logger');
-const { requireAuth, requirePermiso, safeError } = require('../middleware/index');
+const { requireAuth, requirePermiso, safeError, emitSocket } = require('../middleware/index');
 const PERM_ANEXO_FIDU = 'modulo.anexo_fidu';
+
+function notifyAnexoFidu(cambio = {}) {
+  try { emitSocket('anexo-fidu:actualizado', cambio); } catch (_) { /* noop */ }
+}
 const { upload, validateMagicBytes } = require('../middleware/upload');
 const { ANEXO_FIDU_COLUMNAS, ANEXO_FIDU_COLUMN_KEYS, ANEXO_FIDU_REGISTROS_ORDER_SQL } = require('../utils/anexo-fidu-columns');
 const { mismoOrdenIds, reordenarFilaAnexo } = require('../utils/anexo-fidu-orden');
@@ -354,6 +358,7 @@ router.post('/anexo-fidu/carpetas', requireAuth, requirePermiso(PERM_ANEXO_FIDU)
       [nombre, periodo, vis]
     );
     res.status(201).json({ ok: true, carpeta: { id: result.insertId, nombre, periodo, estado_visibilidad: vis } });
+    notifyAnexoFidu({ accion: 'carpeta_creada', carpetaId: result.insertId });
   } catch (e) {
     logger.error('[ANEXO-FIDU] carpeta create:', e);
     res.status(500).json({ error: safeError(e) });
@@ -385,6 +390,7 @@ router.patch('/anexo-fidu/carpetas/:id', requireAuth, requirePermiso(PERM_ANEXO_
       ok: true,
       carpeta: { id, nombre, total_archivos: cnt?.total_archivos || 0 }
     });
+    notifyAnexoFidu({ accion: 'carpeta_editada', carpetaId: id });
   } catch (e) {
     logger.error('[ANEXO-FIDU] carpeta update:', e);
     res.status(500).json({ error: safeError(e) });
@@ -421,6 +427,7 @@ router.delete('/anexo-fidu/carpetas/:id', requireAuth, requirePermiso(PERM_ANEXO
       eliminados_archivos: delArch.affectedRows || archCnt?.n || 0,
       eliminados_registros: regCnt?.n || 0
     });
+    notifyAnexoFidu({ accion: 'carpeta_eliminada', carpetaId: id });
   } catch (e) {
     logger.error('[ANEXO-FIDU] carpeta delete:', e);
     res.status(500).json({ error: safeError(e) });
@@ -475,6 +482,7 @@ router.post('/anexo-fidu/archivos', requireAuth, requirePermiso(PERM_ANEXO_FIDU)
       ok: true,
       archivo: { id: archivoId, carpeta_id: carpetaId, nombre, total_registros: 0 }
     });
+    notifyAnexoFidu({ accion: 'archivo_creado', carpetaId, archivoId });
   } catch (e) {
     logger.error('[ANEXO-FIDU] archivo create:', e);
     res.status(500).json({ error: safeError(e) });

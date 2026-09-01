@@ -1819,6 +1819,16 @@ const runtimeMigrations = [
     }
   },
   {
+    name: 'rt_turnos_llamado_en',
+    description: 'Marca de llamado TV: un paciente EN_SALA solo se anuncia una vez',
+    run: async (db) => {
+      if (!(await tableExists(db, 'turnos'))) return;
+      if (!(await columnExists(db, 'turnos', 'llamado_en'))) {
+        await db.execute('ALTER TABLE turnos ADD COLUMN llamado_en DATETIME NULL DEFAULT NULL');
+      }
+    }
+  },
+  {
     name: 'rt_sop_pdx_papelera',
     description: 'Papelera de archivos eliminados de Cargar Reportes (PDX)',
     run: async (db) => {
@@ -1857,6 +1867,21 @@ const runtimeMigrations = [
         INDEX idx_sop_pdx_pap_carp (carpeta_id),
         INDEX idx_sop_pdx_pap_nom (paciente_nombre_norm),
         INDEX idx_sop_pdx_pap_elim (eliminado_en)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`);
+    }
+  },
+  {
+    name: 'rt_poll_events',
+    description: 'Cola de eventos tiempo-real en MySQL (poll entre workers Passenger)',
+    run: async (db) => {
+      await db.execute(`CREATE TABLE IF NOT EXISTS rt_poll_events (
+        id BIGINT AUTO_INCREMENT PRIMARY KEY,
+        usuario_id INT NULL,
+        event VARCHAR(100) NOT NULL,
+        payload JSON NULL,
+        created_at TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+        INDEX idx_rt_poll_since (id, created_at),
+        INDEX idx_rt_poll_user (usuario_id, id)
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`);
     }
   }

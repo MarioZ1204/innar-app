@@ -1,4 +1,4 @@
-﻿// server.js — punto de entrada Express (tiempo real vía GET /api/eventos/poll)
+﻿// server.js — punto de entrada Express (tiempo real vía SSE /api/eventos/stream)
 // La lógica de configuración vive en `config/`, `socket/`, `middleware/`, `migrations/`.
 
 require('dotenv').config();
@@ -93,7 +93,7 @@ setImmediate(() => {
 app.use(compression({
   filter(req, res) {
     const p = String(req.path || '');
-    if (p.includes('/zip') || p.includes('/descargar') || p.includes('/eventos/poll')) return false;
+    if (p.includes('/zip') || p.includes('/descargar') || p.includes('/eventos/poll') || p.includes('/eventos/stream')) return false;
     if (String(res.getHeader('Content-Type') || '').includes('application/zip')) return false;
     return compression.filter(req, res);
   }
@@ -166,7 +166,8 @@ app.get('/api/health/db', async (req, res) => {
 app.get('/api/socket-status', (req, res) => {
   res.json({
     realtime: {
-      mode: 'http-poll',
+      mode: 'sse',
+      streamPath: '/api/eventos/stream',
       pollPath: '/api/eventos/poll',
       pushPath: '/api/eventos/push'
     },
@@ -495,6 +496,11 @@ const PORT = process.env.PORT || 3000;
     }
 
     await runRuntimeMigrations(db, logger);
+    try {
+      require('./utils/event-poll-queue').attachPersistDb(db);
+    } catch (e) {
+      logger.warn('[STARTUP] Persistencia poll no enganchada: ' + e.message, { type: 'STARTUP' });
+    }
 
     try {
       const { recargarCatalogoAnexoFidu } = require('./utils/anexo-fidu-servicios');

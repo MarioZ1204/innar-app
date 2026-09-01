@@ -43,6 +43,16 @@ describe('realtime-client-relay', () => {
     expect(relay.sanitizarCallId('<script>')).toBe('');
   });
 
+  test('sanitizarAnuncioPaciente conserva turno_id válido', () => {
+    const out = relay.sanitizarAnuncioPaciente({
+      paciente_nombre: 'Ana',
+      turno_id: '42',
+      extra: true
+    });
+    expect(out.turno_id).toBe(42);
+    expect(out.extra).toBeUndefined();
+  });
+
   test('agenda:anuncio-ack se retransmite con estado sanitizado', () => {
     const emisor = 99002;
     q.flushUser(emisor);

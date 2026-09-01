@@ -158,22 +158,81 @@
     };
   }
 
+  let _innarRestoringScroll = 0;
+
+  function liveSnapshotFrom(base) {
+    if (base?.container && base.container.isConnected) {
+      return {
+        container: base.container,
+        useWindow: false,
+        top: base.container.scrollTop,
+        left: base.container.scrollLeft,
+        winX: window.scrollX,
+        winY: window.scrollY
+      };
+    }
+    return getScrollSnapshot(base?.container || document.body);
+  }
+
+  function snapshotTop(s) {
+    if (!s) return 0;
+    if (s.container && !s.useWindow) return s.top;
+    return s.winY || 0;
+  }
+
+  /** Si el usuario ya está en otro sitio (no un reset a 0), no devolver el scroll. */
+  function userHasMovedAway(snapshot) {
+    const liveTop = snapshotTop(liveSnapshotFrom(snapshot));
+    const snapTop = snapshotTop(snapshot);
+    return liveTop >= 24 && Math.abs(liveTop - snapTop) > 8;
+  }
+
   function restoreScrollSnapshot(snapshot) {
     if (!snapshot) return;
-    if (snapshot.container) {
-      snapshot.container.scrollTop = snapshot.top;
-      snapshot.container.scrollLeft = snapshot.left;
+    if (userHasMovedAway(snapshot)) return;
+    _innarRestoringScroll += 1;
+    try {
+      if (snapshot.container && snapshot.container.isConnected) {
+        snapshot.container.scrollTop = snapshot.top;
+        snapshot.container.scrollLeft = snapshot.left;
+      }
+      window.scrollTo(snapshot.winX, snapshot.winY);
+    } finally {
+      requestAnimationFrame(() => {
+        _innarRestoringScroll = Math.max(0, _innarRestoringScroll - 1);
+      });
     }
-    window.scrollTo(snapshot.winX, snapshot.winY);
   }
 
   function restoreScrollLater(snapshot) {
-    const run = () => restoreScrollSnapshot(snapshot);
+    if (!snapshot) return;
+    let cancelled = false;
+    const onUserScroll = () => {
+      if (_innarRestoringScroll) return;
+      cancelled = true;
+    };
+    window.addEventListener('scroll', onUserScroll, { passive: true, capture: true });
+    if (snapshot.container) {
+      snapshot.container.addEventListener('scroll', onUserScroll, { passive: true });
+    }
+    const run = () => {
+      if (cancelled) return;
+      restoreScrollSnapshot(snapshot);
+    };
+    const cleanup = () => {
+      window.removeEventListener('scroll', onUserScroll, { capture: true });
+      if (snapshot.container) {
+        snapshot.container.removeEventListener('scroll', onUserScroll);
+      }
+    };
     requestAnimationFrame(() => {
       run();
       requestAnimationFrame(() => {
         run();
-        setTimeout(run, 0);
+        setTimeout(() => {
+          run();
+          cleanup();
+        }, 0);
       });
     });
   }
@@ -183,6 +242,24 @@
       return typeof fn === 'function' ? fn() : undefined;
     }
     const snap = getScrollSnapshot(anchor || document.body);
+    let desired = snap;
+    const originEl = snap.container ? snap.top : snap.winY;
+    const originWin = snap.winY;
+
+    const onScroll = () => {
+      if (_innarRestoringScroll) return;
+      const live = liveSnapshotFrom(snap);
+      const prevEl = desired.container ? desired.top : desired.winY;
+      const nextEl = live.container ? live.top : live.winY;
+      // innerHTML al cargar suele resetear a 0; no tomar eso como scroll del usuario
+      if (nextEl < 16 && prevEl > 40) return;
+      desired = live;
+    };
+
+    const scrollEl = snap.container || window;
+    scrollEl.addEventListener('scroll', onScroll, { passive: true });
+    if (snap.container) window.addEventListener('scroll', onScroll, { passive: true });
+
     try {
       const result = fn();
       if (result && typeof result.then === 'function') {
@@ -190,7 +267,16 @@
       }
       return result;
     } finally {
-      restoreScrollLater(snap);
+      scrollEl.removeEventListener('scroll', onScroll);
+      if (snap.container) window.removeEventListener('scroll', onScroll);
+      const destEl = snapshotTop(desired);
+      const liveTop = snapshotTop(liveSnapshotFrom(desired));
+      const userMoved = Math.abs(destEl - originEl) > 8 || Math.abs((desired.winY || 0) - originWin) > 8;
+      if (userMoved) {
+        if (liveTop < 16) restoreScrollSnapshot(desired);
+      } else if (originEl > 16 && liveTop < 16) {
+        restoreScrollLater(snap);
+      }
     }
   }
 
@@ -303,12 +389,22 @@
     root._innarScrollObserved = true;
 
     const mo = new MutationObserver(() => {
-      scanView(root);
+      if (root._innarScrollScanRaf) return;
+      root._innarScrollScanRaf = requestAnimationFrame(() => {
+        root._innarScrollScanRaf = 0;
+        scanView(root);
+      });
     });
     mo.observe(root, { childList: true, subtree: true });
 
     if (typeof ResizeObserver === 'function') {
-      const ro = new ResizeObserver(() => scanView(root));
+      const ro = new ResizeObserver(() => {
+        if (root._innarScrollScanRaf) return;
+        root._innarScrollScanRaf = requestAnimationFrame(() => {
+          root._innarScrollScanRaf = 0;
+          scanView(root);
+        });
+      });
       ro.observe(root);
     }
   }
@@ -316,6 +412,7 @@
   window.innarFindScrollContainer = findScrollContainer;
   window.innarGetScrollSnapshot = getScrollSnapshot;
   window.innarRestoreScrollSnapshot = restoreScrollSnapshot;
+  window.innarRestoreScrollLater = restoreScrollLater;
   window.innarPreserveScroll = preserveScroll;
   window.innarGetModuleAnchor = getModuleAnchor;
   window.innarPreserveModuleScroll = preserveModuleScroll;

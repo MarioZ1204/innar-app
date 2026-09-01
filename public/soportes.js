@@ -2094,6 +2094,7 @@
 
   function showSkeletonFolderGrid(container, count = 6) {
     if (!container) return;
+    if (typeof window.innarHasPaintedContent === 'function' && window.innarHasPaintedContent(container)) return;
     container.innerHTML = `<div class="sop-grid sop-skeleton-grid">${Array.from({ length: count }, () =>
       '<div class="sop-skeleton-block sop-skeleton-folder-card"></div>'
     ).join('')}</div>`;
@@ -2101,6 +2102,7 @@
 
   function showSkeletonNavList(container, count = 5) {
     if (!container) return;
+    if (typeof window.innarHasPaintedContent === 'function' && window.innarHasPaintedContent(container)) return;
     container.innerHTML = Array.from({ length: count }, () =>
       '<div class="sop-skeleton-block sop-skeleton-nav-item"></div>'
     ).join('');
@@ -2108,6 +2110,7 @@
 
   function showSkeletonTableRows(tbody, cols, rows = 5) {
     if (!tbody) return;
+    if (typeof window.innarHasPaintedContent === 'function' && window.innarHasPaintedContent(tbody)) return;
     tbody.innerHTML = Array.from({ length: rows }, () =>
       `<tr class="sop-skeleton-table-row">${Array.from({ length: cols }, () =>
         '<td><div class="sop-skeleton-block"></div></td>'
@@ -3434,6 +3437,11 @@
       if (!res.ok) { sopToast(data.error || 'Error', 'error'); return; }
       closeSopModal(modal);
       sopToast('Carpeta creada', 'success');
+      if (data.carpeta && data.carpeta.id) {
+        const ya = pdxState.carpetas.some((c) => Number(c.id) === Number(data.carpeta.id));
+        if (!ya) pdxState.carpetas.push(data.carpeta);
+        renderListaCarpetasPdx();
+      }
       await cargarCarpetasPdx();
       renderListaCarpetasPdx();
     };
@@ -4429,12 +4437,11 @@
 
   window.initReportesPdx = function initReportesPdx() {
     sopIcons($('view-reportes-pdx'));
-    sopAnimateModuleIn('view-reportes-pdx');
     if (initPdxDone) {
       setupEntradaDocumentoPdx();
       const btnPap = $('btnSopPdxPapelera');
       if (btnPap) btnPap.style.display = sopPerm('modulo.papelera_pdx') ? '' : 'none';
-      refrescarVistaPdxActual().catch(console.error);
+      refrescarVistaPdxActual().catch(() => {});
       return;
     }
     initPdxDone = true;
@@ -7074,9 +7081,8 @@
 
   window.initArmadoSoportes = function initArmadoSoportes() {
     sopIcons($('view-armado-soportes'));
-    sopAnimateModuleIn('view-armado-soportes');
     if (initArmadoDone) {
-      refrescarVistaArmadoActual().catch(console.error);
+      refrescarVistaArmadoActual().catch(() => {});
       return;
     }
     initArmadoDone = true;

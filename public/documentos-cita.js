@@ -258,7 +258,7 @@
     $('formTitulo').textContent = labelTipo(state.tipo);
     $('formHint').textContent = state.tipo === 'certificado'
       ? 'Revise los datos del certificado. Puede editar antes de descargar.'
-      : 'Complete los datos FOMAG y cargue la firma del paciente.';
+      : 'Complete los datos FOMAG y cargue la firma del paciente o, si aplica, la del acudiente.';
     $('formCertificado').hidden = state.tipo !== 'certificado';
     $('formComprobante').hidden = state.tipo !== 'comprobante';
   }
@@ -426,8 +426,8 @@
       const payload = state.tipo === 'comprobante'
         ? await buildComprobantePayload()
         : buildCertificadoPayload();
-      if (state.tipo === 'comprobante' && !payload.firma_paciente) {
-        throw new Error('Debe cargar la firma del paciente');
+      if (state.tipo === 'comprobante' && !payload.firma_paciente && !payload.firma_acudiente) {
+        throw new Error('Debe cargar la firma del paciente o la del acudiente');
       }
       const data = await fetchPreview(payload);
       state.currentPreview = data;
@@ -454,8 +454,8 @@
       const payload = state.tipo === 'comprobante'
         ? await buildComprobantePayload()
         : buildCertificadoPayload();
-      if (state.tipo === 'comprobante' && !payload.firma_paciente) {
-        throw new Error('Debe cargar la firma del paciente');
+      if (state.tipo === 'comprobante' && !payload.firma_paciente && !payload.firma_acudiente) {
+        throw new Error('Debe cargar la firma del paciente o la del acudiente');
       }
       const PDF = window.innarDocumentoPdf;
       if (!PDF) throw new Error('Generador PDF no disponible');

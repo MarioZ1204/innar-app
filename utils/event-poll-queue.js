@@ -72,7 +72,94 @@ function touchSubscriber(usuarioId) {
   lastPollAt.set(key, Date.now());
 }
 
-function enqueue(usuarioKey, event, data) {
+let persistDb = null;
+let persistChain = Promise.resolve();
+let lastPruneAt = 0;
+
+function attachPersistDb(db) {
+  persistDb = db && typeof db.execute === 'function' ? db : null;
+}
+
+function persistRow(usuarioId, event, data) {
+  if (!persistDb) return;
+  const uidNum = usuarioId != null && usuarioId !== '' ? parseInt(String(usuarioId), 10) : NaN;
+  const uid = Number.isFinite(uidNum) && uidNum > 0 ? uidNum : null;
+  const payload = data === undefined ? null : JSON.stringify(data);
+  persistChain = persistChain.then(async () => {
+    try {
+      await persistDb.execute(
+        'INSERT INTO rt_poll_events (usuario_id, event, payload) VALUES (?, ?, ?)',
+        [uid, String(event || '').slice(0, 100), payload]
+      );
+      const now = Date.now();
+      if (now - lastPruneAt > 60000) {
+        lastPruneAt = now;
+        await persistDb.execute(
+          'DELETE FROM rt_poll_events WHERE created_at < DATE_SUB(NOW(), INTERVAL 3 MINUTE)'
+        );
+      }
+    } catch (_) { /* tabla aún no creada */ }
+  }).catch(() => {});
+}
+
+async function readPersistedSince(usuarioId, sinceId) {
+  if (!persistDb) return { events: [], lastId: Math.max(0, parseInt(sinceId, 10) || 0) };
+  const uid = canonicalUsuarioId(usuarioId);
+  const since = Math.max(0, parseInt(sinceId, 10) || 0);
+  try {
+    const rows = await persistDb.query(
+      `SELECT id, event, payload FROM rt_poll_events
+       WHERE id > ?
+         AND created_at > DATE_SUB(NOW(), INTERVAL 2 MINUTE)
+         AND (usuario_id IS NULL OR usuario_id = ?)
+       ORDER BY id ASC
+       LIMIT 200`,
+      [since, uid ? parseInt(uid, 10) : 0]
+    );
+    const events = [];
+    let lastId = since;
+    for (const r of rows || []) {
+      const id = Number(r.id) || 0;
+      if (id > lastId) lastId = id;
+      let data;
+      if (r.payload == null || r.payload === '') {
+        data = undefined;
+      } else if (typeof r.payload === 'object') {
+        data = r.payload;
+      } else {
+        try { data = JSON.parse(r.payload); } catch (_) { data = undefined; }
+      }
+      events.push(data === undefined ? { event: r.event } : { event: r.event, data });
+    }
+    return { events, lastId };
+  } catch (_) {
+    return { events: [], lastId: since };
+  }
+}
+
+function eventDedupeKey(row) {
+  try {
+    return `${row.event}|${JSON.stringify(row.data === undefined ? null : row.data)}`;
+  } catch (_) {
+    return String(row.event);
+  }
+}
+
+function mergePollEvents(persisted, memory) {
+  const out = [];
+  const seen = new Set();
+  const list = Array.isArray(persisted) ? persisted.concat(memory || []) : (memory || []);
+  for (const row of list) {
+    if (!row || !row.event) continue;
+    const k = eventDedupeKey(row);
+    if (seen.has(k)) continue;
+    seen.add(k);
+    out.push(row.data === undefined ? { event: row.event } : { event: row.event, data: row.data });
+  }
+  return out;
+}
+
+function enqueueMemory(usuarioKey, event, data) {
   let q = queues.get(usuarioKey);
   if (!q) {
     q = [];
@@ -81,6 +168,11 @@ function enqueue(usuarioKey, event, data) {
   q.push(data === undefined ? { event } : { event, data });
   while (q.length > MAX_EVENTS_PER_USER) q.shift();
   notifyWaiters(usuarioKey);
+}
+
+function enqueue(usuarioKey, event, data) {
+  persistRow(usuarioKey, event, data);
+  enqueueMemory(usuarioKey, event, data);
 }
 
 /**
@@ -137,9 +229,10 @@ function isUserOnline(usuarioId, ttlMs = 90000) {
  * Broadcast a todos los usuarios con poll reciente.
  */
 function broadcast(event, data) {
+  persistRow(null, event, data);
   const ids = activeSubscriberIds();
   for (const usuarioKey of ids) {
-    enqueue(usuarioKey, event, data);
+    enqueueMemory(usuarioKey, event, data);
   }
 }
 
@@ -147,11 +240,12 @@ function broadcast(event, data) {
  * Broadcast a todos menos `excludeUsuarioId` (equiv. socket.broadcast desde un cliente).
  */
 function broadcastExcept(excludeUsuarioId, event, data) {
+  persistRow(null, event, data);
   const ex = canonicalUsuarioId(excludeUsuarioId);
   const ids = activeSubscriberIds();
   for (const usuarioKey of ids) {
     if (usuarioKey === ex) continue;
-    enqueue(usuarioKey, event, data);
+    enqueueMemory(usuarioKey, event, data);
   }
 }
 
@@ -189,5 +283,8 @@ module.exports = {
   isUserOnline,
   broadcast,
   broadcastExcept,
-  resetQueuesForTests
+  resetQueuesForTests,
+  attachPersistDb,
+  readPersistedSince,
+  mergePollEvents
 };

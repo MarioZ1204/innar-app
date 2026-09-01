@@ -2498,7 +2498,8 @@
   }
 
   async function initAnexoFidu() {
-    if (!initAfiduDone) {
+    const first = !initAfiduDone;
+    if (first) {
       bindEvents();
       try {
         await cargarColumnas();
@@ -2514,6 +2515,10 @@
     actualizarSidebarAfiduActivo();
     actualizarHeaderAfidu();
     afiduIcons($('view-anexo-fidu'));
+    if (!first) {
+      refrescarVistaAfiduActual().catch(() => {});
+      return;
+    }
     try {
       await cargarResumenPersonas();
       await refrescarVistaAfiduActual();

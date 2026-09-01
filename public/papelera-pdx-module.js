@@ -65,7 +65,9 @@
   async function cargarLista() {
     const tbody = $('papeleraPdxBody');
     if (!tbody) return;
-    tbody.innerHTML = `<tr><td colspan="7">${emptyHtml('Cargando…')}</td></tr>`;
+    if (!(typeof window.innarHasPaintedContent === 'function' && window.innarHasPaintedContent(tbody))) {
+      tbody.innerHTML = `<tr><td colspan="7">${emptyHtml('Cargando…')}</td></tr>`;
+    }
     try {
       const res = await apiFetch('/api/soportes/pdx/papelera');
       const data = await res.json().catch(() => ({}));
@@ -177,8 +179,13 @@
       $('btnPapeleraPdxRefresh')?.addEventListener('click', cargarLista);
       $('btnPapeleraPdxEscanear')?.addEventListener('click', escanearBackups);
       $('papeleraPdxBuscar')?.addEventListener('input', renderTabla);
+      cargarLista();
+      return;
     }
-    cargarLista();
+    const tbody = $('papeleraPdxBody');
+    if (!(typeof window.innarHasPaintedContent === 'function' && window.innarHasPaintedContent(tbody))) {
+      cargarLista();
+    }
   }
 
   window.initPapeleraPdxModule = initPapeleraPdxModule;
