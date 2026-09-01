@@ -24,10 +24,44 @@ function contarEstados(arr, estadosList) {
   return arr.filter((c) => estadosList.includes(c.estado)).length;
 }
 
+/** Misma regla que electro: estado Reprogramado o marca [Reprogramado] en observaciones. */
+function esElectroReprogramadaAuditoria(row) {
+  if (!row) return false;
+  const est = String(row.estado || '').trim();
+  if (est === 'Reprogramado') return true;
+  return /\[Reprogramado\]/i.test(String(row.observaciones || ''));
+}
+
+function normalizarEstadoElectroAuditoria(row) {
+  if (!row) return row;
+  if (!esElectroReprogramadaAuditoria(row)) return row;
+  if (row.estado === 'Reprogramado') return row;
+  return { ...row, estado: 'Reprogramado' };
+}
+
+/** Programado ≠ Reprogramado: no mezclar por coincidencia parcial ni por etiqueta en observaciones. */
+function aplicarFiltroEstadoElectro(conditions, params, estado) {
+  if (!estado) return;
+  if (estado === 'Programado') {
+    conditions.push('ce.estado = ?');
+    params.push('Programado');
+    conditions.push('(ce.observaciones IS NULL OR ce.observaciones NOT LIKE ?)');
+    params.push('%[Reprogramado]%');
+    return;
+  }
+  if (estado === 'Reprogramado') {
+    conditions.push('(ce.estado = ? OR (ce.observaciones IS NOT NULL AND ce.observaciones LIKE ?))');
+    params.push('Reprogramado', '%[Reprogramado]%');
+    return;
+  }
+  conditions.push('ce.estado = ?');
+  params.push(estado);
+}
+
 function combinarCitasPorTipo(tipoCita, estado, citasMedicas, citasElectro) {
   if (!tipoCita || tipoCita === 'TODOS') {
     const esMedicaEstado = estado && ['PENDIENTE', 'EN_SALA', 'EN_ATENCION', 'ATENDIDO', 'NO_ASISTIO', 'CANCELADO', 'REPROGRAMADO'].includes(estado);
-    const esElectroEstado = estado && ['Programado', 'Confirmado', 'En Sala', 'En Estudio', 'Completado', 'No Asistió', 'Cancelado', 'Reprogramado'].includes(estado);
+    const esElectroEstado = estado && ['Programado', 'Confirmado', 'En Sala', 'En Estudio', 'Pausado', 'Completado', 'No Asistió', 'Cancelado', 'Reprogramado', 'Adelantado'].includes(estado);
     if (esMedicaEstado && !esElectroEstado) return citasMedicas;
     if (esElectroEstado && !esMedicaEstado) return citasElectro;
     return [...citasMedicas, ...citasElectro];
@@ -137,13 +171,13 @@ async function queryCitasAuditoria(db, query) {
       electroParams.push(...doctorIds);
     }
   }
-  if (estado) { electroConditions.push('ce.estado = ?'); electroParams.push(estado); }
+  if (estado) aplicarFiltroEstadoElectro(electroConditions, electroParams, estado);
   if (entidadArr.length === 1) { electroConditions.push('ce.entidad = ?'); electroParams.push(entidadArr[0]); }
   else if (entidadArr.length > 1) { electroConditions.push(`ce.entidad IN (${entidadArr.map(() => '?').join(',')})`); electroParams.push(...entidadArr); }
   if (tipoEstudioArr.length === 1) { electroConditions.push('ce.estudio = ?'); electroParams.push(tipoEstudioArr[0]); }
   else if (tipoEstudioArr.length > 1) { electroConditions.push(`ce.estudio IN (${tipoEstudioArr.map(() => '?').join(',')})`); electroParams.push(...tipoEstudioArr); }
 
-  const citasElectro = await db.query(`
+  const citasElectroRaw = await db.query(`
     SELECT
       ce.id,
       DATE_FORMAT(ce.fecha, '%Y-%m-%d') AS fecha,
@@ -156,6 +190,7 @@ async function queryCitasAuditoria(db, query) {
       '' AS medico_nombre,
       ce.estudio AS especialidad_nombre,
       ce.estado,
+      ce.observaciones,
       ce.entidad,
       'ELECTRODIAGNOSTICO' AS tipo_cita,
       'N/A' AS numero_turno
@@ -165,10 +200,13 @@ async function queryCitasAuditoria(db, query) {
     ORDER BY ce.fecha DESC, ce.hora_agendamiento DESC
   `, electroParams);
 
-  const citas = ordenarCitas(combinarCitasPorTipo(tipoCita, estado, citasMedicas, citasElectro));
-  const resumen = buildResumenAuditoria(tipoCita, citas, citasMedicas, citasElectro);
+  const citasElectro = (Array.isArray(citasElectroRaw) ? citasElectroRaw : []).map(normalizarEstadoElectroAuditoria);
+  const citasMedicasNorm = Array.isArray(citasMedicas) ? citasMedicas : [];
 
-  return { citas, resumen, citasMedicas, citasElectro };
+  const citas = ordenarCitas(combinarCitasPorTipo(tipoCita, estado, citasMedicasNorm, citasElectro));
+  const resumen = buildResumenAuditoria(tipoCita, citas, citasMedicasNorm, citasElectro);
+
+  return { citas, resumen, citasMedicas: citasMedicasNorm, citasElectro };
 }
 
 function mapReciboParaExport(rec) {

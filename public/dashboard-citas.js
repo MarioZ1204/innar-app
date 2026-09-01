@@ -162,6 +162,7 @@ function initDashboardCitas() {
     cargarMedicosFiltro().then(() => initDashboardMedicoMultiSelect());
     cargarEspecialidadesFiltro();
     cargarEntidadesFiltroAuditoria();
+    actualizarOpcionesEstadoFiltro(selTipoCita?.value || 'TODOS');
     recargarFiltrosTipoDashboard();
 
     const hoy = new Date();
@@ -198,6 +199,70 @@ function initDashboardCitas() {
   }
 }
 
+/** Estados de filtro según tipo de cita (valores = los que guarda/consulta la API). */
+const ESTADOS_FILTRO_AGENDA_MEDICA = [
+  { value: 'PENDIENTE', label: 'Pendiente' },
+  { value: 'EN_SALA', label: 'En sala' },
+  { value: 'EN_ATENCION', label: 'En atención' },
+  { value: 'ATENDIDO', label: 'Atendido' },
+  { value: 'NO_ASISTIO', label: 'No asistió' },
+  { value: 'CANCELADO', label: 'Cancelado' }
+];
+
+const ESTADOS_FILTRO_ELECTRO = [
+  { value: 'Programado', label: 'Programado' },
+  { value: 'Confirmado', label: 'Confirmado' },
+  { value: 'En Sala', label: 'En sala' },
+  { value: 'En Estudio', label: 'En estudio' },
+  { value: 'Pausado', label: 'Pausado' },
+  { value: 'Completado', label: 'Completado' },
+  { value: 'No Asistió', label: 'No asistió' },
+  { value: 'Cancelado', label: 'Cancelado' },
+  { value: 'Reprogramado', label: 'Reprogramado' },
+  { value: 'Adelantado', label: 'Adelantado' }
+];
+
+function appendEstadoOptions(sel, items) {
+  (items || []).forEach((item) => {
+    const opt = document.createElement('option');
+    opt.value = item.value;
+    opt.textContent = item.label;
+    sel.appendChild(opt);
+  });
+}
+
+/** Rellena el select Estado según Tipo de cita; conserva valor si sigue siendo válido. */
+function actualizarOpcionesEstadoFiltro(tipoCita) {
+  const sel = document.getElementById('dashboardEstado');
+  if (!sel) return;
+  const prev = sel.value || '';
+  const tipo = tipoCita || document.getElementById('dashboardTipoCita')?.value || 'TODOS';
+
+  sel.innerHTML = '';
+  const optTodos = document.createElement('option');
+  optTodos.value = '';
+  optTodos.textContent = 'Todos los estados';
+  sel.appendChild(optTodos);
+
+  if (tipo === 'AGENDA_MEDICA') {
+    appendEstadoOptions(sel, ESTADOS_FILTRO_AGENDA_MEDICA);
+  } else if (tipo === 'ELECTRODIAGNOSTICO') {
+    appendEstadoOptions(sel, ESTADOS_FILTRO_ELECTRO);
+  } else {
+    const gAgenda = document.createElement('optgroup');
+    gAgenda.label = 'Agenda médica';
+    appendEstadoOptions(gAgenda, ESTADOS_FILTRO_AGENDA_MEDICA);
+    sel.appendChild(gAgenda);
+    const gElectro = document.createElement('optgroup');
+    gElectro.label = 'Electrodiagnóstico';
+    appendEstadoOptions(gElectro, ESTADOS_FILTRO_ELECTRO);
+    sel.appendChild(gElectro);
+  }
+
+  const stillValid = prev && !!sel.querySelector(`option[value="${CSS.escape(prev)}"]`);
+  sel.value = stillValid ? prev : '';
+}
+
 function actualizarVisibilidadFiltrosMedico(tipoCita) {
   const colMed = document.getElementById('dashboardMedicoCol');
   const colEsp = document.getElementById('dashboardEspecialidadCol');
@@ -223,6 +288,8 @@ function actualizarVisibilidadFiltrosMedico(tipoCita) {
   if (esMedica && selEstudio && window.clearMultiSelect) {
     window.clearMultiSelect(selEstudio);
   }
+
+  actualizarOpcionesEstadoFiltro(tipoCita);
 }
 
 async function cargarMedicosFiltro() {
@@ -571,14 +638,16 @@ function renderCitaAuditoriaRow(tbody, cita) {
 
 function getEstadoBadgeClass(estado) {
   const e = (estado || '').toLowerCase().trim();
+  // Reprogramado ANTES que Programado (evitar confusiones por substring).
+  if (e === 'reprogramado' || e === 'reprogramada') return 'dash-est--reprog';
   if (e === 'atendido' || e === 'completado') return 'dash-est--ok';
   if (e === 'no_asistio' || e === 'no asistió') return 'dash-est--no';
   if (e === 'cancelado' || e === 'cancelada') return 'dash-est--cancel';
-  if (e === 'reprogramado' || e === 'reprogramada') return 'dash-est--reprog';
   if (e === 'pendiente' || e === 'programado') return 'dash-est--wait';
   if (e === 'en_sala' || e === 'en sala') return 'dash-est--sala';
   if (e === 'en_atencion' || e === 'en atención' || e === 'en estudio') return 'dash-est--atencion';
   if (e === 'confirmado') return 'dash-est--confirm';
+  if (e === 'pausado' || e === 'adelantado') return 'dash-est--otro';
   return 'dash-est--otro';
 }
 
