@@ -69,6 +69,25 @@
     });
   };
 
+  /**
+   * Cierra al hacer clic en el fondo solo si el pointerdown también fue en el fondo.
+   * Evita cerrar el modal al seleccionar texto dentro y soltar fuera.
+   */
+  window.bindBackdropDismiss = function bindBackdropDismiss(backdrop, onDismiss) {
+    if (!backdrop || typeof onDismiss !== 'function') return;
+    let pressedOnBackdrop = false;
+    backdrop.addEventListener('pointerdown', (e) => {
+      pressedOnBackdrop = e.target === backdrop;
+    });
+    backdrop.addEventListener('pointercancel', () => {
+      pressedOnBackdrop = false;
+    });
+    backdrop.addEventListener('click', (e) => {
+      if (e.target === backdrop && pressedOnBackdrop) onDismiss(e);
+      pressedOnBackdrop = false;
+    });
+  };
+
   window.innarAnimateViewIn = function innarAnimateViewIn(viewEl) {
     if (!viewEl || document.documentElement.classList.contains('innar-motion-off')) return;
     viewEl.classList.remove('innar-view-enter');

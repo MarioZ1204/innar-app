@@ -164,7 +164,11 @@
       }
 
       backdrop.querySelector('#cmpPdxEstCancel')?.addEventListener('click', () => cerrar(null));
-      backdrop.addEventListener('click', (e) => { if (e.target === backdrop) cerrar(null); });
+      if (typeof window.bindBackdropDismiss === 'function') {
+        window.bindBackdropDismiss(backdrop, () => cerrar(null));
+      } else {
+        backdrop.addEventListener('click', (e) => { if (e.target === backdrop) cerrar(null); });
+      }
       backdrop.querySelector('#cmpPdxEstOk')?.addEventListener('click', () => {
         const estudio = sel.value.trim();
         if (!estudio) {
@@ -281,7 +285,11 @@
       else await poblarTipos('', '');
 
       backdrop.querySelector('#cmpPdxCancel')?.addEventListener('click', () => cerrar(null));
-      backdrop.addEventListener('click', (e) => { if (e.target === backdrop) cerrar(null); });
+      if (typeof window.bindBackdropDismiss === 'function') {
+        window.bindBackdropDismiss(backdrop, () => cerrar(null));
+      } else {
+        backdrop.addEventListener('click', (e) => { if (e.target === backdrop) cerrar(null); });
+      }
       backdrop.querySelector('#cmpPdxOk')?.addEventListener('click', () => {
         const especialidad = selEsp.value.trim();
         const tipo_consulta = selTipo.value.trim();

@@ -2269,7 +2269,11 @@
     wrap._sopPrevFocus = document.activeElement;
     wrap._sopClose = () => closeSopModal(wrap);
     if (closeOnBackdrop) {
-      wrap.addEventListener('click', (e) => { if (e.target === wrap) closeSopModal(wrap); });
+      if (typeof window.bindBackdropDismiss === 'function') {
+        window.bindBackdropDismiss(wrap, () => closeSopModal(wrap));
+      } else {
+        wrap.addEventListener('click', (e) => { if (e.target === wrap) closeSopModal(wrap); });
+      }
     }
     const onKey = (e) => {
       if (closeOnEscape && e.key === 'Escape') closeSopModal(wrap);

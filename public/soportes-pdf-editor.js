@@ -601,9 +601,16 @@
     const holder = document.createElement('div');
     backdrop.appendChild(holder);
 
-    backdrop.addEventListener('click', (ev) => {
-      if (ev.target === backdrop) mountApi?.destroy();
-    });
+    if (typeof window.bindBackdropDismiss === 'function') {
+      window.bindBackdropDismiss(backdrop, () => mountApi?.destroy());
+    } else {
+      let downOnBackdrop = false;
+      backdrop.addEventListener('pointerdown', (e) => { downOnBackdrop = e.target === backdrop; });
+      backdrop.addEventListener('click', (ev) => {
+        if (ev.target === backdrop && downOnBackdrop) mountApi?.destroy();
+        downOnBackdrop = false;
+      });
+    }
 
     let mountApi;
     mountApi = await mountPdfViewer(holder, {

@@ -102,7 +102,11 @@
     dialog.innerHTML = html;
     wrap.appendChild(dialog);
     wrap._rhPrevFocus = document.activeElement;
-    wrap.addEventListener('click', (e) => { if (e.target === wrap) closeRhModal(wrap); });
+    if (typeof window.bindBackdropDismiss === 'function') {
+      window.bindBackdropDismiss(wrap, () => closeRhModal(wrap));
+    } else {
+      wrap.addEventListener('click', (e) => { if (e.target === wrap) closeRhModal(wrap); });
+    }
     const onKey = (e) => { if (e.key === 'Escape') closeRhModal(wrap); };
     wrap._rhKeyHandler = onKey;
     document.addEventListener('keydown', onKey);

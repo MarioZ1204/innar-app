@@ -2499,7 +2499,11 @@ function showConfirm(msg, onOk, { okText = 'Eliminar', cancelText = 'Cancelar', 
       onOk();
     }
   });
-  backdrop.addEventListener('click', e => { if (e.target === backdrop) closeConfirm(); });
+  if (typeof window.bindBackdropDismiss === 'function') {
+    window.bindBackdropDismiss(backdrop, closeConfirm);
+  } else {
+    backdrop.addEventListener('click', e => { if (e.target === backdrop) closeConfirm(); });
+  }
 }
 
 /** Confirmación estándar antes de eliminar (usar en todo el sistema). */
@@ -2562,7 +2566,11 @@ function showPromptInput(msg, onOk, {
     if (e.key === 'Enter') { e.preventDefault(); submit(); }
     if (e.key === 'Escape') closePrompt();
   });
-  backdrop.addEventListener('click', e => { if (e.target === backdrop) closePrompt(); });
+  if (typeof window.bindBackdropDismiss === 'function') {
+    window.bindBackdropDismiss(backdrop, closePrompt);
+  } else {
+    backdrop.addEventListener('click', e => { if (e.target === backdrop) closePrompt(); });
+  }
 }
 window.showPromptInput = showPromptInput;
 
@@ -2610,12 +2618,19 @@ function showConfirmChoice(msg, onPrimary, onSecondary, {
       onPrimary();
     }
   });
-  backdrop.addEventListener('click', e => {
-    if (e.target === backdrop) {
+  if (typeof window.bindBackdropDismiss === 'function') {
+    window.bindBackdropDismiss(backdrop, () => {
       closeChoice();
       if (typeof onCancel === 'function') onCancel();
-    }
-  });
+    });
+  } else {
+    backdrop.addEventListener('click', e => {
+      if (e.target === backdrop) {
+        closeChoice();
+        if (typeof onCancel === 'function') onCancel();
+      }
+    });
+  }
 }
 window.showConfirmChoice = showConfirmChoice;
 
@@ -2650,7 +2665,11 @@ function showPrompt(msg, onOk, { okText = 'Confirmar', cancelText = 'Cancelar', 
       onOk(val);
     }
   });
-  backdrop.addEventListener('click', e => { if (e.target === backdrop) closePrompt(); });
+  if (typeof window.bindBackdropDismiss === 'function') {
+    window.bindBackdropDismiss(backdrop, closePrompt);
+  } else {
+    backdrop.addEventListener('click', e => { if (e.target === backdrop) closePrompt(); });
+  }
 }
 
 // ========== SKELETON ROWS ==========
@@ -12527,7 +12546,11 @@ function showEditTipoPagoReciboModal(reciboId, numero, tipoPagoActual) {
       showToast('Error al guardar forma de pago', 'error');
     }
   });
-  backdrop.addEventListener('click', (e) => { if (e.target === backdrop) backdrop.remove(); });
+  if (typeof window.bindBackdropDismiss === 'function') {
+    window.bindBackdropDismiss(backdrop, () => backdrop.remove());
+  } else {
+    backdrop.addEventListener('click', (e) => { if (e.target === backdrop) backdrop.remove(); });
+  }
 }
 
 async function showEditObservacionesReciboModal(reciboId, numero) {
@@ -12583,7 +12606,11 @@ async function showEditObservacionesReciboModal(reciboId, numero) {
       showToast('Error al guardar observaciones', 'error');
     }
   });
-  backdrop.addEventListener('click', (e) => { if (e.target === backdrop) backdrop.remove(); });
+  if (typeof window.bindBackdropDismiss === 'function') {
+    window.bindBackdropDismiss(backdrop, () => backdrop.remove());
+  } else {
+    backdrop.addEventListener('click', (e) => { if (e.target === backdrop) backdrop.remove(); });
+  }
 }
 
 function showEditFechaReciboModal(reciboId, numero, fechaActual) {
@@ -12633,7 +12660,11 @@ function showEditFechaReciboModal(reciboId, numero, fechaActual) {
       showToast('Error al actualizar fecha', 'error');
     }
   });
-  backdrop.addEventListener('click', (e) => { if (e.target === backdrop) backdrop.remove(); });
+  if (typeof window.bindBackdropDismiss === 'function') {
+    window.bindBackdropDismiss(backdrop, () => backdrop.remove());
+  } else {
+    backdrop.addEventListener('click', (e) => { if (e.target === backdrop) backdrop.remove(); });
+  }
 }
 
 function showEditValorReciboModal(reciboId, numero, totalActual) {
@@ -12683,7 +12714,11 @@ function showEditValorReciboModal(reciboId, numero, totalActual) {
       showToast('Error al actualizar valor', 'error');
     }
   });
-  backdrop.addEventListener('click', (e) => { if (e.target === backdrop) backdrop.remove(); });
+  if (typeof window.bindBackdropDismiss === 'function') {
+    window.bindBackdropDismiss(backdrop, () => backdrop.remove());
+  } else {
+    backdrop.addEventListener('click', (e) => { if (e.target === backdrop) backdrop.remove(); });
+  }
 }
 
 async function showEditReciboModal({ id, medico, servicio, entidad, cliente, tipoPago }) {
@@ -12773,7 +12808,11 @@ async function showEditReciboModal({ id, medico, servicio, entidad, cliente, tip
       else showToast(jr.error || 'Error al actualizar', 'error');
     } catch (_) { showToast('Error actualizando recibo', 'error'); }
   });
-  backdrop.addEventListener('click', e => { if (e.target === backdrop) backdrop.remove(); });
+  if (typeof window.bindBackdropDismiss === 'function') {
+    window.bindBackdropDismiss(backdrop, () => backdrop.remove());
+  } else {
+    backdrop.addEventListener('click', e => { if (e.target === backdrop) backdrop.remove(); });
+  }
 }
 
 function updateSavedCount() {
@@ -12841,7 +12880,11 @@ async function showEditGeneradorReciboModal(reciboId, numero, generadoIdActual, 
   const sel = backdrop.querySelector('#editReciboGenerador');
   const btnOk = backdrop.querySelector('#editReciboGeneradorOk');
   backdrop.querySelector('.btn-cancel').addEventListener('click', () => backdrop.remove());
-  backdrop.addEventListener('click', (e) => { if (e.target === backdrop) backdrop.remove(); });
+  if (typeof window.bindBackdropDismiss === 'function') {
+    window.bindBackdropDismiss(backdrop, () => backdrop.remove());
+  } else {
+    backdrop.addEventListener('click', (e) => { if (e.target === backdrop) backdrop.remove(); });
+  }
 
   try {
     if (!_recibosUsuariosGeneradorCache) {
