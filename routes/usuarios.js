@@ -30,7 +30,7 @@ const PERMISOS_VALIDOS = new Set([
   'recibos.anular', 'recibos.eliminar', 'recibos.exportar', 'recibos.gestionar_servicios', 'recibos.resetear',
   'agenda.ver', 'agenda.crear', 'agenda.editar', 'agenda.eliminar', 'agenda.cambiar_estado',
   'agenda.llamar_siguiente', 'agenda.marcar_atendido', 'agenda.aviso_doctor', 'agenda.disponibilidad',
-  'agenda.editar_siempre',
+  'agenda.editar_siempre', 'agenda.cambiar_consultorio',
   'chat.usar',
   'llamado.configurar',
   'electro.ver', 'electro.crear', 'electro.editar', 'electro.eliminar', 'electro.cambiar_estado',
