@@ -1884,6 +1884,28 @@ const runtimeMigrations = [
         INDEX idx_rt_poll_user (usuario_id, id)
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`);
     }
+  },
+  {
+    name: 'rt_llamado_tv_compartido',
+    description: 'Estado compartido TV llamado + consultorio por jornada',
+    run: async (db) => {
+      await db.execute(`CREATE TABLE IF NOT EXISTS llamado_tv_estado (
+        id TINYINT NOT NULL PRIMARY KEY DEFAULT 1,
+        doctor_ids_json JSON NOT NULL,
+        configurado TINYINT(1) NOT NULL DEFAULT 0,
+        actualizado_en DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        actualizado_por INT NULL
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`);
+      await db.execute(`CREATE TABLE IF NOT EXISTS llamado_consultorio_jornada (
+        doctor_id INT NOT NULL,
+        fecha DATE NOT NULL,
+        numero_consultorio INT NOT NULL,
+        actualizado_en DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        actualizado_por INT NULL,
+        PRIMARY KEY (doctor_id, fecha),
+        INDEX idx_llamado_jornada_fecha (fecha)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`);
+    }
   }
 ];
 

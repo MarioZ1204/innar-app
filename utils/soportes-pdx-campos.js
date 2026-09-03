@@ -17,6 +17,11 @@ function esTemaReporteClinico(tema) {
   return ['vtm', 'eeg', 'psg', 'actigrafia', 'latencia'].includes(tema);
 }
 
+/** Órdenes/comprobantes/consentimientos y reportes clínicos PSG/EEG/VTM/latencia/actigrafía. */
+function temaRequiereDocumentoPdx(tema) {
+  return esTemaEstructuradoConDocumento(tema) || esTemaReporteClinico(tema);
+}
+
 function definicionCamposPorTema(tema) {
   if (tema === 'comprobantes_consulta_medica') {
     return [
@@ -49,11 +54,24 @@ function definicionCamposPorTema(tema) {
   if (tema === 'psg') {
     return [
       ...base,
-      { key: 'paciente_documento', label: 'Documento', requerido: false, input: 'doc_numero' },
+      { key: 'paciente_documento', label: 'Número de documento', requerido: true, input: 'doc_numero' },
       { key: 'estudio_texto', label: 'Tipo PSG', requerido: true, input: 'psg_estudio' }
     ];
   }
-  if (esTemaReporteClinico(tema) || tema === 'neutral') {
+  if (esTemaReporteClinico(tema)) {
+    return [
+      ...base,
+      { key: 'paciente_documento', label: 'Número de documento', requerido: true, input: 'doc_numero' },
+      {
+        key: 'estudio_texto',
+        label: 'Estudio',
+        requerido: false,
+        input: 'inferred',
+        nota: 'Se completa automáticamente según la carpeta al descargar'
+      }
+    ];
+  }
+  if (tema === 'neutral') {
     return [
       ...base,
       {
@@ -180,5 +198,8 @@ module.exports = {
   definicionCamposPorTema,
   mergeDatosNombre,
   evaluarCamposMinimos,
-  ayudaCamposPorTema
+  ayudaCamposPorTema,
+  esTemaReporteClinico,
+  esTemaEstructuradoConDocumento,
+  temaRequiereDocumentoPdx
 };

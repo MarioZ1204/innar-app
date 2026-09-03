@@ -567,6 +567,9 @@ async function obtenerExpedienteContext(expedienteId) {
       'c.tipo AS contenedor_tipo',
       'd.nombre_display',
       'd.estado_facturacion',
+      'd.modo AS dia_modo',
+      'd.parent_id AS dia_parent_id',
+      '(SELECT pd.nombre_display FROM sop_dias pd WHERE pd.id = d.parent_id) AS contenedora_nombre',
       'p.periodo',
       'p.etiqueta AS periodo_etiqueta'
     ];

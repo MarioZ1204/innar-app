@@ -45,6 +45,16 @@ async function validarMoverDiaArmado(db, diaId, nuevoParentIdRaw) {
   }
   const dia = diaRows[0];
   const nuevoParentId = normalizarParentId(nuevoParentIdRaw);
+  const oldParentId = normalizarParentId(dia.parent_id);
+
+  if (Number(dia.es_contenedor) === 1 && oldParentId === 0) {
+    return {
+      ok: false,
+      status: 400,
+      error: 'Anexo FIDU, Facturas FIDU y U C Q N no se pueden mover.'
+    };
+  }
+
   if (nuevoParentId === diaId) {
     return { ok: false, status: 400, error: 'No puede mover una carpeta dentro de sí misma' };
   }
@@ -63,6 +73,32 @@ async function validarMoverDiaArmado(db, diaId, nuevoParentIdRaw) {
       return { ok: false, status: 400, error: 'No puede mover una carpeta dentro de una subcarpeta suya' };
     }
   }
+
+  // Evitar mover entre Anexo / Facturas / U C Q N (estructuras de disco distintas).
+  const { fetchModoParentContenedora, normalizarModoDia } = require('./soportes-armado-modos');
+  const modoOrigen = oldParentId
+    ? await fetchModoParentContenedora(db, oldParentId)
+    : normalizarModoDia(dia.modo);
+  const modoDestino = nuevoParentId
+    ? await fetchModoParentContenedora(db, nuevoParentId)
+    : null;
+  if (nuevoParentId === 0) {
+    // Raíz del mes: solo carpetas de facturación huérfanas deberían llegar aquí.
+    if (modoOrigen !== 'facturacion') {
+      return {
+        ok: false,
+        status: 400,
+        error: 'Las carpetas de Anexo o U C Q N deben permanecer dentro de su contenedora.'
+      };
+    }
+  } else if (modoOrigen !== modoDestino) {
+    return {
+      ok: false,
+      status: 400,
+      error: 'No puede mover carpetas entre Anexo FIDU, Facturas FIDU y U C Q N.'
+    };
+  }
+
   const dup = await db.query(
     `SELECT id FROM sop_dias
      WHERE periodo_id = ? AND parent_id = ? AND nombre_display = ? AND id != ?
@@ -72,7 +108,7 @@ async function validarMoverDiaArmado(db, diaId, nuevoParentIdRaw) {
   if (dup.length) {
     return { ok: false, status: 409, error: 'Ya existe una carpeta con ese nombre en el destino' };
   }
-  return { ok: true, dia, nuevoParentId };
+  return { ok: true, dia, nuevoParentId, oldParentId, modoDestino };
 }
 
 module.exports = {

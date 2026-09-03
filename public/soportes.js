@@ -135,27 +135,27 @@
     vtm: {
       pattern: 'Apellidos, Nombres   YYYY-MM-DD.pdf',
       ejemplo: 'García López, Juan Carlos   2026-05-27.pdf',
-      nota: 'Al descargar se añade el tipo de estudio (VTM) al nombre del archivo.'
+      nota: 'El número de documento es obligatorio al subir (solo dígitos, 4 a 20). Al descargar se añade el tipo de estudio (VTM) al nombre.'
     },
     eeg: {
       pattern: 'Apellidos, Nombres   YYYY-MM-DD.pdf',
       ejemplo: 'García López, Juan Carlos   2026-05-27.pdf',
-      nota: 'Al descargar se añade el tipo de estudio (EEG) al nombre del archivo.'
+      nota: 'El número de documento es obligatorio al subir (solo dígitos, 4 a 20). Al descargar se añade el tipo de estudio (EEG) al nombre.'
     },
     psg: {
       pattern: 'Apellidos, Nombres   YYYY-MM-DD.pdf',
       ejemplo: 'García López, Juan Carlos   2026-05-27.pdf',
-      nota: 'No incluya número de documento. Separe con espacios (no use guiones entre campos). Al descargar se añade el tipo de estudio PSG según la carpeta.'
+      nota: 'El número de documento es obligatorio al subir (solo dígitos). Separe con espacios (no use guiones entre campos). Al descargar se añade el tipo PSG según la carpeta.'
     },
     actigrafia: {
       pattern: 'Apellidos, Nombres   YYYY-MM-DD.pdf',
       ejemplo: 'García López, Juan Carlos   2026-05-27.pdf',
-      nota: 'Al descargar se añade el tipo de estudio al nombre del archivo.'
+      nota: 'El número de documento es obligatorio al subir (solo dígitos, 4 a 20). Al descargar se añade el tipo de estudio al nombre.'
     },
     latencia: {
       pattern: 'Apellidos, Nombres   YYYY-MM-DD.pdf',
       ejemplo: 'García López, Juan Carlos   2026-05-27.pdf',
-      nota: 'Al descargar se añade el tipo de estudio (prueba de latencia múltiple del sueño) al nombre del archivo.'
+      nota: 'El número de documento es obligatorio al subir (solo dígitos, 4 a 20). Al descargar se añade el tipo de estudio (latencia múltiple) al nombre.'
     },
     ordenes: {
       pattern: 'ORDEN + HC APELLIDOS NOMBRES TIPO DOC (CC, TI…) DOCUMENTO (solo números) FECHA TIPO DE ESTUDIO.pdf',
@@ -606,10 +606,10 @@
       return { oblig: [...oblig, 'Número de documento (solo dígitos)', 'Tipo de estudio'], opc: [...opcUnificar, 'Tipo de documento (CC, TI, RC…)'] };
     }
     if (tema === 'psg') {
-      return { oblig: [...oblig, 'Tipo PSG (Básica, CPAP, BPAP)'], opc: [...opcMulti, 'Documento'] };
+      return { oblig: [...oblig, 'Número de documento (solo dígitos)', 'Tipo PSG (Básica, CPAP, BPAP)'], opc: opcMulti };
     }
     if (['vtm', 'eeg', 'actigrafia', 'latencia'].includes(tema)) {
-      return { oblig, opc: [...opcMulti, 'Estudio (se completa según la carpeta)'] };
+      return { oblig: [...oblig, 'Número de documento (solo dígitos)'], opc: [...opcMulti, 'Estudio (se completa según la carpeta)'] };
     }
     return { oblig, opc: opcUnificar };
   }
@@ -645,6 +645,10 @@
       base.push(
         { key: 'paciente_documento', label: 'Número de documento', requerido: true, input: 'doc_numero', estado: 'falta' },
         { key: 'estudio_texto', label: 'Tipo de PSG', requerido: true, input: 'psg_estudio', estado: 'falta' }
+      );
+    } else if (['vtm', 'eeg', 'actigrafia', 'latencia'].includes(tema)) {
+      base.push(
+        { key: 'paciente_documento', label: 'Número de documento', requerido: true, input: 'doc_numero', estado: 'falta' }
       );
     }
     return base;
@@ -3391,6 +3395,8 @@
     const esConsultaMed = esCarpetaConsultaMedicaPdx(pdxState.carpetaActual);
     const esEstructConDoc = esCarpetaEstructuradaPdx(pdxState.carpetaActual) && !esConsultaMed;
     const esPsg = esCarpetaPsgReportePdx(pdxState.carpetaActual);
+    const esReporteClinico = esCarpetaReporteClinicoPdx(pdxState.carpetaActual);
+    const docObligatorio = esEstructConDoc || esReporteClinico;
     const modal = openSopModal(`
       <h3><i data-lucide="pencil"></i> Editar datos del reporte</h3>
       <div class="sop-field"><label>Apellidos</label><input type="text" id="sopPdxEdApe" value="${escapeHtml(archivo.apellidos || '')}"></div>
@@ -3405,7 +3411,7 @@
         ? `<div class="sop-field"><label>Tipo de consulta</label><input type="text" id="sopPdxEdTipoConsulta" value="${escapeHtml(archivo.marca_tiempo || archivo.tipo_consulta || '')}" placeholder="Control, Primera vez…"></div>`
         : ''}
       ${esEstructConDoc ? `<div class="sop-field"><label>Tipo de documento</label><input type="text" id="sopPdxEdTipoDoc" data-campo-tipo="tipo_doc" value="${escapeHtml(normalizarTipoDocumentoCliente(archivo.tipo_documento || 'CC'))}" maxlength="4" autocomplete="off" spellcheck="false" style="text-transform:uppercase" placeholder="CC"></div>` : ''}
-      <div class="sop-field"><label>Número de documento${(esEstructConDoc || esPsg) ? ' *' : ' (opcional)'}</label><input type="text" id="sopPdxEdDoc" data-campo-tipo="doc_numero" value="${escapeHtml(archivo.paciente_documento || '')}" inputmode="numeric" pattern="[0-9]*"></div>
+      <div class="sop-field"><label>Número de documento${docObligatorio ? ' *' : ' (opcional)'}</label><input type="text" id="sopPdxEdDoc" data-campo-tipo="doc_numero" value="${escapeHtml(archivo.paciente_documento || '')}" inputmode="numeric" pattern="[0-9]*"></div>
       <p style="margin:8px 0 0"><button type="button" class="sop-btn sop-btn-ghost sop-btn-sm" id="sopPdxEdHist"><i data-lucide="history"></i> Ver historial</button></p>
       <div class="sop-dialog-actions">
         <button type="button" class="sop-btn sop-btn-ghost" id="sopPdxEdCancel">Cancelar</button>
@@ -3438,7 +3444,7 @@
       if (esConsultaMed && !body.marca_tiempo) {
         return sopToast('Indique el tipo de consulta', 'warning');
       }
-      if (esEstructConDoc && (!body.paciente_documento || body.paciente_documento.length < 4)) {
+      if (docObligatorio && (!body.paciente_documento || body.paciente_documento.length < 4)) {
         return sopToast('El número de documento es obligatorio (solo dígitos, 4 a 20)', 'warning');
       }
       const res = await apiFetch(`/api/soportes/pdx/archivos/${archivo.id}`, {
@@ -3644,9 +3650,9 @@
       const cardsHtml = analisisLista.map((item, idx) => {
         const parsed = item.analisis.parsed || item.analisis.parcial || {};
         const docFieldsHtml = esReporteClinico
-          ? (esPsg ? `
-          <div class="sop-field"><label>Documento (opcional)</label><input type="text" class="sopMultiDoc" data-idx="${idx}" value="${escapeHtml(parsed.paciente_documento || '')}" inputmode="numeric" pattern="[0-9]*"></div>
-        ` : '')
+          ? `
+          <div class="sop-field"><label>Número de documento *</label><input type="text" class="sopMultiDoc" data-idx="${idx}" value="${escapeHtml(parsed.paciente_documento || '')}" inputmode="numeric" pattern="[0-9]*"></div>
+        `
           : ((esConsultaMedica && !esComprobanteConsultaMed) ? '' : (!esConsultaMedica ? `
           <div class="sop-field"><label>Tipo de documento</label><input type="text" class="sopMultiTipoDoc" data-idx="${idx}" value="${escapeHtml(normalizarTipoDocumentoCliente(parsed.tipo_documento || 'CC'))}" maxlength="4" style="text-transform:uppercase" placeholder="CC"></div>
           <div class="sop-field"><label>Número de documento *</label><input type="text" class="sopMultiDoc" data-idx="${idx}" value="${escapeHtml(parsed.paciente_documento || '')}" inputmode="numeric" pattern="[0-9]*"></div>
@@ -3755,6 +3761,12 @@
               hasError = true;
               break;
             }
+            const docNorm = normalizarNumeroDocumentoCliente(doc);
+            if (!docNorm || docNorm.length < 4) {
+              sopToast(`${itemRef}: El número de documento es obligatorio (solo dígitos, 4 a 20)`, 'warning');
+              hasError = true;
+              break;
+            }
             if (esPsg && !psgEst) {
               sopToast(`${itemRef}: Seleccione el tipo PSG`, 'warning');
               hasError = true;
@@ -3764,13 +3776,10 @@
               apellidos,
               nombres,
               fecha_estudio: fecha,
+              paciente_documento: docNorm,
               confirmacion_manual: '1'
             };
-            if (esPsg) {
-              body.estudio_texto = psgEst;
-              const docNorm = normalizarNumeroDocumentoCliente(doc);
-              if (docNorm) body.paciente_documento = docNorm;
-            }
+            if (esPsg) body.estudio_texto = psgEst;
             uploads.push({ file: analisisLista[idx].file, body });
             continue;
           }
@@ -3882,6 +3891,8 @@
     const esComprobanteConsultaMed = esCarpetaComprobanteConsultaMedicaPdx(carpeta);
     const esConsultaMedica = esCarpetaConsultaMedicaPdx(carpeta);
     const esPsg = tema === 'psg';
+    const esReporteClinico = esCarpetaReporteClinicoPdx(carpeta);
+    const docObligatorio = (esEstruct && !esConsultaMedica) || esReporteClinico;
     const motivoTxt = analisis.motivo === 'falta_estudio_psg'
       ? 'El nombre no incluye el tipo de estudio PSG (Básica, CPAP o BPAP). Complételo para continuar.'
       : `El nombre del archivo no cumple la estructura requerida. Complételo o corríjalo para subir el PDF.`;
@@ -3898,10 +3909,10 @@
       <div class="sop-field"><label>Nombre completo *</label><input type="text" id="sopPdxCorrNombreCompleto" value="${escapeHtml(nombreCompletoVal)}" placeholder="Nombres y apellidos"></div>` : `
       <div class="sop-field"><label>Apellidos *</label><input type="text" id="sopPdxCorrApe" value="${escapeHtml(p.apellidos || '')}"></div>
       <div class="sop-field"><label>Nombres *</label><input type="text" id="sopPdxCorrNom" value="${escapeHtml(p.nombres || '')}"></div>`}
-      ${esEstruct ? `
+      ${esEstruct && !esConsultaMedica ? `
       <div class="sop-field"><label>Tipo de documento</label><input type="text" id="sopPdxCorrTipoDoc" data-campo-tipo="tipo_doc" value="${escapeHtml(normalizarTipoDocumentoCliente(p.tipo_documento || 'CC'))}" maxlength="4" autocomplete="off" spellcheck="false" style="text-transform:uppercase" placeholder="CC"></div>
       <div class="sop-field"><label>Número de documento *</label><input type="text" id="sopPdxCorrDoc" data-campo-tipo="doc_numero" value="${escapeHtml(p.paciente_documento || '')}" inputmode="numeric" pattern="[0-9]*"></div>` : `
-      <div class="sop-field"><label>Documento (opcional)</label><input type="text" id="sopPdxCorrDoc" data-campo-tipo="doc_numero" value="${escapeHtml(p.paciente_documento || '')}" inputmode="numeric" pattern="[0-9]*"></div>`}
+      <div class="sop-field"><label>Número de documento${docObligatorio ? ' *' : ' (opcional)'}</label><input type="text" id="sopPdxCorrDoc" data-campo-tipo="doc_numero" value="${escapeHtml(p.paciente_documento || '')}" inputmode="numeric" pattern="[0-9]*"></div>`}
       <div class="sop-field"><label>Fecha del estudio *</label><input type="date" id="sopPdxCorrFecha" value="${escapeHtml(p.fecha_estudio || '')}"></div>
       ${esComprobanteConsultaMed ? `
       <div class="sop-field"><label>Especialidad *</label><select id="sopPdxCorrEst"></select></div>
@@ -3962,8 +3973,11 @@
       if (!esComprobanteConsultaMed && (!body.apellidos || !body.nombres || !body.fecha_estudio)) {
         return sopToast('Complete apellidos, nombres y fecha', 'warning');
       }
-      if (esEstruct && (!body.paciente_documento || body.paciente_documento.length < 4 || !body.estudio_texto)) {
+      if (esEstruct && !esConsultaMedica && (!body.paciente_documento || body.paciente_documento.length < 4 || !body.estudio_texto)) {
         return sopToast('Complete documento (solo dígitos) y tipo de examen', 'warning');
+      }
+      if (esReporteClinico && (!body.paciente_documento || body.paciente_documento.length < 4)) {
+        return sopToast('El número de documento es obligatorio (solo dígitos, 4 a 20)', 'warning');
       }
       if (esPsg && !body.estudio_texto) {
         return sopToast('Seleccione el tipo de estudio PSG', 'warning');
@@ -4862,6 +4876,21 @@
     return p?.modo || 'facturacion';
   }
 
+  /** Modo de la raíz (Anexo / Facturas / U C Q N) a la que pertenece una carpeta. */
+  function armModoRaizDeDia(diaId) {
+    let cur = armDiaById(diaId);
+    if (!cur) return 'facturacion';
+    const seen = new Set();
+    while (cur) {
+      const p = armDiaParentId(cur);
+      if (!p) return cur.modo || 'facturacion';
+      if (seen.has(p)) break;
+      seen.add(p);
+      cur = armDiaById(p);
+    }
+    return cur?.modo || 'facturacion';
+  }
+
   function armLabelNuevaCarpetaModo(modo) {
     if (modo === 'anexo_fidu') return 'Nuevo anexo';
     if (modo === 'ucqn') return 'Nueva persona';
@@ -5039,6 +5068,13 @@
   async function armEjecutarMoverDia(srcId, targetParent) {
     const d = armDiaById(srcId);
     if (!d || armDiaParentId(d) === targetParent) return false;
+    const modoSrc = armModoRaizDeDia(srcId);
+    if (targetParent === 0 && modoSrc !== 'facturacion') {
+      throw new Error('Las carpetas de Anexo o U C Q N deben permanecer dentro de su contenedora.');
+    }
+    if (targetParent > 0 && armModoRaizDeDia(targetParent) !== modoSrc) {
+      throw new Error('No puede mover carpetas entre Anexo FIDU, Facturas FIDU y U C Q N.');
+    }
     await armMoverDiaApi(srcId, targetParent);
     sopToast('Carpeta movida', 'success');
     await armRecargarDiasTrasMover(targetParent);
@@ -5046,10 +5082,16 @@
   }
 
   function armOpcionesDestinoMover(excludeId) {
-    const opts = [{ value: 0, label: `${armState.periodoLabel || 'Mes'} (raíz)` }];
+    const modoSrc = armModoRaizDeDia(excludeId);
+    const opts = [];
+    // Solo facturación puede ir a la raíz del mes; Anexo/UCQN quedan bajo su contenedora.
+    if (modoSrc === 'facturacion') {
+      opts.push({ value: 0, label: `${armState.periodoLabel || 'Mes'} (raíz)` });
+    }
     armState.dias
       .filter((d) => d.es_contenedor && d.id !== excludeId)
       .filter((d) => !armEsAncestroEnCliente(excludeId, d.id))
+      .filter((d) => armModoRaizDeDia(d.id) === modoSrc)
       .sort((a, b) => compararTextoNatural(a.nombre_display, b.nombre_display))
       .forEach((d) => {
         const chain = [];
@@ -5073,10 +5115,17 @@
     const d = armDiaById(diaId);
     if (!d) return sopToast('Carpeta no encontrada', 'warning');
     const opts = armOpcionesDestinoMover(diaId);
+    if (!opts.length) {
+      return sopToast('No hay carpetas destino válidas en esta sección', 'warning');
+    }
     const actual = armDiaParentId(d);
+    const modoSrc = armModoRaizDeDia(diaId);
+    const hintDest = modoSrc === 'facturacion'
+      ? 'Mueva <strong>' + escapeHtml(d.nombre_display) + '</strong> dentro de una carpeta contenedora o a la raíz del mes.'
+      : 'Mueva <strong>' + escapeHtml(d.nombre_display) + '</strong> dentro de otra carpeta de esta misma sección (Anexo, Facturas o U C Q N).';
     const modal = openSopModal(`
       <h3><i data-lucide="folder-input"></i> Mover carpeta</h3>
-      <p style="font-size:.85rem;color:#64748b;margin:-6px 0 12px">Mueva <strong>${escapeHtml(d.nombre_display)}</strong> dentro de una carpeta contenedora o a la raíz del mes.</p>
+      <p style="font-size:.85rem;color:#64748b;margin:-6px 0 12px">${hintDest}</p>
       <div class="sop-field"><label>Carpeta contenedora destino</label>
         <select id="sopArmMoveDest">${opts.map((o) =>
           `<option value="${o.value}"${o.value === actual ? ' selected' : ''}>${escapeHtml(o.label)}</option>`
@@ -5253,7 +5302,7 @@
           <strong>${huerfanasRaiz.length} carpeta(s) de facturación</strong> siguen en la raíz del mes (no se borraron). Abra <strong>Facturas FIDU</strong> o arrástrelas ahí. Los archivos en disco no se eliminaron.
         </div>` : ''}
         ${armPuedeArrastrarDia() ? `<p class="sop-arm-drag-hint" style="font-size:.8rem;color:#64748b;margin:0 0 10px"><i data-lucide="move" style="width:14px;height:14px;vertical-align:-2px"></i> Mantenga pulsada una carpeta y suéltela sobre un <strong>contenedor</strong>, o use <strong>Mover</strong> para elegir destino.</p>` : ''}
-        <div id="sopArmDiasDropRoot" class="sop-arm-dias-drop-root${armState.diasParentId ? '' : ' hidden'}" data-arm-drop-parent="0" title="Soltar aquí para mover a la raíz del mes"></div>
+        <div id="sopArmDiasDropRoot" class="sop-arm-dias-drop-root${armState.diasParentId && modoCont === 'facturacion' ? '' : ' hidden'}" data-arm-drop-parent="0" title="Soltar aquí para mover a la raíz del mes"></div>
         <div id="sopArmDiasGrid" class="sop-folder-explorer-grid${viewMode === 'list' ? ' sop-folder-list-mode' : ''}"></div>
       </div>`;
     bindSopFolderViewToggle(panel, 'arm');
@@ -7028,16 +7077,37 @@
   function modalEditarDiaArmado(diaId) {
     const d = armState.dias.find((x) => x.id === diaId);
     if (!d) return sopToast('Carpeta no encontrada', 'warning');
-    const modal = openSopModal(`
-      <h3><i data-lucide="pencil"></i> Editar carpeta de día</h3>
-      <div class="sop-field"><label>Nombre de la carpeta</label>
-        <input id="sopArmDiaEditNom" value="${escapeHtml(d.nombre_display)}"></div>
-      <div class="sop-field"><label>Estado de facturación</label>
+    const modo = d.modo || 'facturacion';
+    const esUcqn = modo === 'ucqn';
+    const esAnexo = modo === 'anexo_fidu';
+    const esRaizFija = !Number(d.parent_id) && Number(d.es_contenedor);
+    if (esRaizFija) {
+      return sopToast('Anexo FIDU, Facturas FIDU y U C Q N no se pueden renombrar.', 'warning');
+    }
+    const titulo = esUcqn && !d.es_contenedor
+      ? 'Editar persona (UCQN)'
+      : esUcqn
+        ? 'Editar carpeta UCQN'
+        : esAnexo
+          ? 'Editar anexo'
+          : 'Editar carpeta de día';
+    const labelNom = esUcqn && !d.es_contenedor ? 'Nombre de la persona' : 'Nombre de la carpeta';
+    const campoFact = (!esUcqn && !esAnexo)
+      ? `<div class="sop-field"><label>Estado de facturación</label>
         <select id="sopArmDiaEditFact">
           <option value="a_facturar"${d.estado_facturacion !== 'facturados' ? ' selected' : ''}>A facturar</option>
           <option value="facturados"${d.estado_facturacion === 'facturados' ? ' selected' : ''}>Facturados</option>
-        </select></div>
-      <p class="sop-pdx-format-nota" style="margin:8px 0 0">Si cambia el nombre o el estado, las carpetas en disco se renombran automáticamente.</p>
+        </select></div>`
+      : '';
+    const nota = esUcqn
+      ? 'Al cambiar el nombre se renombra la carpeta en disco y se actualizan los PDF vinculados.'
+      : 'Si cambia el nombre o el estado, las carpetas en disco se renombran automáticamente.';
+    const modal = openSopModal(`
+      <h3><i data-lucide="pencil"></i> ${escapeHtml(titulo)}</h3>
+      <div class="sop-field"><label>${escapeHtml(labelNom)}</label>
+        <input id="sopArmDiaEditNom" value="${escapeHtml(d.nombre_display)}"></div>
+      ${campoFact}
+      <p class="sop-pdx-format-nota" style="margin:8px 0 0">${escapeHtml(nota)}</p>
       <div class="sop-dialog-actions">
         <button type="button" class="sop-btn sop-btn-ghost" id="sopArmDiaEditCancel">Cancelar</button>
         <button type="button" class="sop-btn sop-btn-teal" id="sopArmDiaEditOk">Guardar</button>
@@ -7045,19 +7115,27 @@
     modal.querySelector('#sopArmDiaEditCancel').onclick = () => closeSopModal(modal);
     modal.querySelector('#sopArmDiaEditOk').onclick = async () => {
       const nombre_display = $('sopArmDiaEditNom')?.value?.trim();
-      const estado_facturacion = $('sopArmDiaEditFact')?.value;
+      const estado_facturacion = $('sopArmDiaEditFact')?.value || d.estado_facturacion || 'a_facturar';
       if (!nombre_display) return sopToast('Indique el nombre', 'warning');
+      const body = { nombre_display };
+      if (!esUcqn && !esAnexo) body.estado_facturacion = estado_facturacion;
       const res = await apiFetch(`/api/soportes/armado/dias/${diaId}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ nombre_display, estado_facturacion })
+        body: JSON.stringify(body)
       });
       const data = await res.json();
       if (!res.ok) { sopToast(data.error, 'error'); return; }
       closeSopModal(modal);
       sopToast('Carpeta actualizada', 'success');
+      const parentKeep = armState.diasParentId;
       await seleccionarPeriodoArmado(armState.periodoId);
-      if (data.dia?.id) seleccionarDiaArmado(data.dia.id);
+      if (parentKeep) {
+        armState.diasParentId = parentKeep;
+        renderArmadoDiasExplorer();
+        renderArmadoContextBar();
+      }
+      if (data.dia?.id && !data.dia.es_contenedor) seleccionarDiaArmado(data.dia.id);
     };
   }
 

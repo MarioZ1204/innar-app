@@ -14,6 +14,7 @@ const { buildReprogramacionTurnoPayload } = require('../utils/agenda-reprogramac
 const { validarTransicionEstadoTurno } = require('../utils/agenda-estado-transiciones');
 const cuposEntidadAgenda = require('../utils/cupos-entidad-agenda');
 const { desvincularRecibosDeTurnos } = require('../utils/recibos-vinculo');
+const { resolverNumeroConsultorioDoctor } = require('../utils/llamado-tv-config');
 const {
   httpError,
   responderSiHttpError,
@@ -22,6 +23,21 @@ const {
   bloquearAgendaDiasParaCupo,
   bloquearTurnosDoctorDia
 } = require('../utils/locks-concurrencia');
+
+async function doctorParaAnuncio(doctorId, fechaTurno) {
+  const rows = await db.query(
+    'SELECT numero_consultorio, nombre FROM usuarios WHERE id = ?',
+    [doctorId]
+  );
+  const doctor = rows.length > 0 ? rows[0] : {};
+  const numero = await resolverNumeroConsultorioDoctor(
+    db,
+    doctorId,
+    fechaTurno,
+    doctor.numero_consultorio
+  );
+  return { nombre: doctor.nombre || null, numero_consultorio: numero };
+}
 
 // Helper: obtener siguiente número de turno
 async function getNextTurnoNumber(fecha, doctor_id) {
@@ -446,9 +462,9 @@ router.post('/turnos/llamar-siguiente', requireAuth, requireRoleOrPerm(['superad
   const idorErr = denyIfDoctorMismatch(req, doctor_id);
   if (idorErr) return res.status(403).json({ error: idorErr });
   try {
-    const doctor = await db.query(`SELECT numero_consultorio, nombre FROM usuarios WHERE id = ?`, [doctor_id]);
-    const numeroConsultorio = doctor.length > 0 ? doctor[0].numero_consultorio : null;
-    const doctorNombre = doctor.length > 0 ? doctor[0].nombre : null;
+    const doctor = await doctorParaAnuncio(doctor_id, fecha);
+    const numeroConsultorio = doctor.numero_consultorio;
+    const doctorNombre = doctor.nombre;
 
     let turno = null;
     await db.transaction(async (conn) => {
@@ -513,11 +529,7 @@ router.post('/turnos/:id/llamar', requireAuth, requireRoleOrPerm(['superadmin', 
       });
     }
 
-    const doctorRows = await db.query(
-      'SELECT numero_consultorio, nombre FROM usuarios WHERE id = ?',
-      [turno.doctor_id]
-    );
-    const doctor = doctorRows.length > 0 ? doctorRows[0] : {};
+    const doctor = await doctorParaAnuncio(turno.doctor_id, turno.fecha);
     const callId = nuevoCallIdAnuncio();
     const payload = payloadAnuncioPaciente(turno, doctor, callId);
     emitSocket('agenda:anunciar-paciente', payload);
@@ -1270,8 +1282,8 @@ router.patch('/turnos/:id/estado', requireAuth, requireRoleOrPerm(['superadmin',
       fecha: turno.fecha
     };
       if (estado === 'EN_ATENCION') {
-        const doctorRow = await db.query('SELECT numero_consultorio FROM usuarios WHERE id = ?', [turno.doctor_id]);
-        emitData.numero_consultorio = doctorRow.length > 0 ? doctorRow[0].numero_consultorio : null;
+        const doctorAnuncio = await doctorParaAnuncio(turno.doctor_id, turno.fecha);
+        emitData.numero_consultorio = doctorAnuncio.numero_consultorio;
       }
       emitSocket('agenda:turno-estado-cambio', emitData);
       if (numeroAsignado) {

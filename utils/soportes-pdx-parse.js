@@ -43,22 +43,27 @@ const FORMATOS_AYUDA = {
   vtm: {
     pattern: 'Apellidos, Nombres   YYYY-MM-DD.pdf',
     ejemplo: 'García López, Juan Carlos   2026-05-27.pdf',
-    nota: 'Al descargar se añade el tipo de estudio (VTM) al nombre del archivo.'
+    nota: 'El número de documento es obligatorio al subir (solo dígitos, 4 a 20). Al descargar se añade el tipo de estudio (VTM) al nombre.'
   },
   eeg: {
     pattern: 'Apellidos, Nombres   YYYY-MM-DD.pdf',
     ejemplo: 'García López, Juan Carlos   2026-05-27.pdf',
-    nota: 'Al descargar se añade el tipo de estudio (EEG) al nombre del archivo.'
+    nota: 'El número de documento es obligatorio al subir (solo dígitos, 4 a 20). Al descargar se añade el tipo de estudio (EEG) al nombre.'
   },
   psg: {
     pattern: 'Apellidos, Nombres   YYYY-MM-DD.pdf',
     ejemplo: 'García López, Juan Carlos   2026-05-27.pdf',
-    nota: 'No incluya número de documento. Separe con espacios (no use guiones entre campos). Al descargar se añade el tipo de estudio PSG según la carpeta.'
+    nota: 'El número de documento es obligatorio al subir (solo dígitos). Separe con espacios (no use guiones entre campos). Al descargar se añade el tipo PSG según la carpeta.'
   },
   actigrafia: {
     pattern: 'Apellidos, Nombres   YYYY-MM-DD.pdf',
     ejemplo: 'García López, Juan Carlos   2026-05-27.pdf',
-    nota: 'Al descargar se añade el tipo de estudio al nombre del archivo.'
+    nota: 'El número de documento es obligatorio al subir (solo dígitos, 4 a 20). Al descargar se añade el tipo de estudio al nombre.'
+  },
+  latencia: {
+    pattern: 'Apellidos, Nombres   YYYY-MM-DD.pdf',
+    ejemplo: 'García López, Juan Carlos   2026-05-27.pdf',
+    nota: 'El número de documento es obligatorio al subir (solo dígitos, 4 a 20). Al descargar se añade el tipo de estudio (latencia múltiple) al nombre.'
   },
   ordenes: {
     pattern: 'ORDEN + HC APELLIDOS NOMBRES TIPO DOC (CC, TI…) DOCUMENTO (solo números) FECHA TIPO DE ESTUDIO.pdf',
@@ -196,7 +201,7 @@ function esTemaFormatoGuionesCompleto(tema) {
 }
 
 function esTemaReporteClinico(tema) {
-  return ['vtm', 'eeg', 'psg', 'actigrafia'].includes(tema);
+  return ['vtm', 'eeg', 'psg', 'actigrafia', 'latencia'].includes(tema);
 }
 
 function fechaDmyValida(d, m) {
@@ -1223,15 +1228,18 @@ function buildMetaDesdeCamposManuales(originalName, body, carpeta) {
       return { ok: false, error: 'El número de documento es obligatorio (solo dígitos, 4 a 20)' };
     }
   } else if (tema === 'psg') {
-    if (paciente_documento && !numeroDocumentoValidoPdx(paciente_documento)) {
-      return { ok: false, error: 'El número de documento debe contener solo dígitos (4 a 20)' };
+    if (!numeroDocumentoValidoPdx(paciente_documento)) {
+      return { ok: false, error: 'El número de documento es obligatorio (solo dígitos, 4 a 20)' };
     }
     estudio = resolverEstudioDesdeLista(estudio, estudios) || estudio;
     if (!estudio) estudio = inferirEstudioDesdeCarpeta(carpeta);
     if (!estudioPsgReconocido(estudio)) {
       return { ok: false, error: 'Seleccione el tipo de estudio PSG (Básica, CPAP o BPAP)' };
     }
-  } else if (['vtm', 'eeg', 'actigrafia'].includes(tema)) {
+  } else if (['vtm', 'eeg', 'actigrafia', 'latencia'].includes(tema)) {
+    if (!numeroDocumentoValidoPdx(paciente_documento)) {
+      return { ok: false, error: 'El número de documento es obligatorio (solo dígitos, 4 a 20)' };
+    }
     if (!estudio) estudio = inferirEstudioDesdeCarpeta(carpeta);
   }
 

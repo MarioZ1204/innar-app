@@ -101,22 +101,22 @@ function runZipJobInline(job) {
   job.status = 'running';
   return runZipJobToDisk(job, (patch) => applyProgress(job, patch))
     .then(async (result) => {
-      job.status = 'ready';
-      job.progress = 100;
-      job.message = 'Listo para descargar';
+    job.status = 'ready';
+    job.progress = 100;
+    job.message = 'Listo para descargar';
       job.filePath = result.filePath;
       if (PERIOD_ZIP_KINDS.has(job.kind) || job.periodoId || job.diaId || job.contenedorId || job.expedienteId) {
         await saveToCacheForSpec(cacheSpecFromJob(job), job.filePath, job.filename);
       }
     })
     .catch((e) => {
-      job.status = 'error';
-      job.error = e.message || 'Error al generar ZIP';
-      job.progress = 0;
-      if (job.filePath && fs.existsSync(job.filePath)) {
-        try { fs.unlinkSync(job.filePath); } catch (_) { /* ignore */ }
-      }
-      job.filePath = null;
+    job.status = 'error';
+    job.error = e.message || 'Error al generar ZIP';
+    job.progress = 0;
+    if (job.filePath && fs.existsSync(job.filePath)) {
+      try { fs.unlinkSync(job.filePath); } catch (_) { /* ignore */ }
+    }
+    job.filePath = null;
     })
     .finally(() => finishZipJobSlot());
 }

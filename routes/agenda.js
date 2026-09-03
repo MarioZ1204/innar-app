@@ -29,6 +29,9 @@ router.get('/consultorios', requireAuth, async (req, res) => {
 // --- Médicos ---
 router.get('/medicos', requireAuth, async (req, res) => {
   try {
+    const { hoyColombiaISO, getConsultoriosJornadaMap } = require('../utils/llamado-tv-config');
+    const fecha = hoyColombiaISO();
+    const { map: jornadaMap } = await getConsultoriosJornadaMap(db, fecha);
     const medicos = await db.query(`
       SELECT u.id, u.nombre, u.usuario, u.especialidad, u.numero_consultorio,
              e.id AS especialidad_id
@@ -37,7 +40,19 @@ router.get('/medicos', requireAuth, async (req, res) => {
       WHERE u.rol = 'doctor' AND u.activo = 1
       ORDER BY u.nombre ASC
     `);
-    res.json(medicos);
+    res.json((medicos || []).map((m) => {
+      const base = m.numero_consultorio;
+      const hoy = jornadaMap[m.id];
+      const efectivo = hoy != null ? hoy : base;
+      return {
+        ...m,
+        numero_consultorio_base: base,
+        numero_consultorio_jornada: hoy != null ? hoy : null,
+        numero_consultorio_efectivo: efectivo,
+        // Compat: la agenda/TV usan el número efectivo del día
+        numero_consultorio: efectivo
+      };
+    }));
   } catch (e) {
     logger.error(e.message, { error: e });
     res.status(500).json({ error: safeError(e) });

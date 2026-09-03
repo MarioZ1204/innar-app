@@ -5,24 +5,25 @@ const {
 const { evaluarCamposMinimos } = require('../utils/soportes-pdx-campos');
 
 describe('evaluarCamposMinimos — carga flexible', () => {
-  test('VTM: nombre sin coma pero con fecha — solo apellidos/nombres/fecha', () => {
+  test('VTM: nombre sin coma pero con fecha — pide documento obligatorio', () => {
     const carpeta = { nombre_display: 'REPORTES VTM MARZO' };
     const parcial = extraerDatosParcialesNombre('Garcia Lopez Juan Carlos 2026-05-27.pdf', carpeta);
     const evaluacion = evaluarCamposMinimos('vtm', parcial, { ok: false }, carpeta);
-    expect(evaluacion.completo).toBe(true);
+    expect(evaluacion.completo).toBe(false);
+    expect(evaluacion.faltantes.some((c) => c.key === 'paciente_documento')).toBe(true);
     expect(evaluacion.datos.apellidos).toBeTruthy();
     expect(evaluacion.datos.nombres).toBeTruthy();
     expect(evaluacion.datos.fecha_estudio).toBe('2026-05-27');
   });
 
-  test('analizarNombreArchivo acepta mínimo en VTM sin regex estricta', () => {
+  test('analizarNombreArchivo en VTM pide corrección si falta documento', () => {
     const a = analizarNombreArchivo(
       'Perez Ana Maria 2026-04-10.pdf',
       { nombre_display: 'VTM ABRIL' },
       []
     );
-    expect(a.requiere_correccion).toBe(false);
-    expect(a.ok).toBe(true);
+    expect(a.requiere_correccion).toBe(true);
+    expect(a.campos?.some((c) => c.key === 'paciente_documento' && c.requerido)).toBe(true);
     expect(a.parcial.fecha_estudio).toBe('2026-04-10');
   });
 
@@ -88,15 +89,53 @@ describe('evaluarCamposMinimos — carga flexible', () => {
     expect(a.parcial.fecha_estudio).toBe('2026-06-01');
   });
 
-  test('latencia múltiple del sueño: mínimo apellidos, nombres y fecha', () => {
+  test('latencia múltiple: exige documento además de apellidos, nombres y fecha', () => {
     const carpeta = { nombre_display: 'PRUEBA DE LATENCIA MULTIPLE DEL SUEÑO' };
-    const evaluacion = evaluarCamposMinimos(
+    const sinDoc = evaluarCamposMinimos(
       'latencia',
       { apellidos: 'García López', nombres: 'Juan Carlos', fecha_estudio: '2026-05-27' },
       { ok: false },
       carpeta
     );
-    expect(evaluacion.completo).toBe(true);
-    expect(evaluacion.datos.estudio_texto).toBe('Prueba de latencia múltiple del sueño');
+    expect(sinDoc.completo).toBe(false);
+    expect(sinDoc.faltantes.some((c) => c.key === 'paciente_documento')).toBe(true);
+
+    const conDoc = evaluarCamposMinimos(
+      'latencia',
+      {
+        apellidos: 'García López',
+        nombres: 'Juan Carlos',
+        fecha_estudio: '2026-05-27',
+        paciente_documento: '1234567890'
+      },
+      { ok: false },
+      carpeta
+    );
+    expect(conDoc.completo).toBe(true);
+    expect(conDoc.datos.estudio_texto).toBe('Prueba de latencia múltiple del sueño');
+  });
+
+  test('PSG: documento obligatorio', () => {
+    const carpeta = { nombre_display: 'REPORTES PSG BASAL' };
+    const sinDoc = evaluarCamposMinimos(
+      'psg',
+      { apellidos: 'Pérez', nombres: 'Ana', fecha_estudio: '2026-05-27', estudio_texto: 'PSG Básica' },
+      { ok: false },
+      carpeta
+    );
+    expect(sinDoc.completo).toBe(false);
+    const conDoc = evaluarCamposMinimos(
+      'psg',
+      {
+        apellidos: 'Pérez',
+        nombres: 'Ana',
+        fecha_estudio: '2026-05-27',
+        estudio_texto: 'PSG Básica',
+        paciente_documento: '1085289107'
+      },
+      { ok: false },
+      carpeta
+    );
+    expect(conDoc.completo).toBe(true);
   });
 });

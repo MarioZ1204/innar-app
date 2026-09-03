@@ -120,7 +120,7 @@ const {
   absPapelera
 } = require('../utils/soportes-pdx-papelera');
 const { enrichExpedientesLista } = require('../utils/soportes-expediente-progreso');
-const { actualizarDia, eliminarDia } = require('../utils/soportes-dia-admin');
+const { actualizarDia, eliminarDia, moverDiaEnDisco } = require('../utils/soportes-dia-admin');
 const { resolveArchivoAbsoluto, resolverArchivoExpedienteRow } = require('../utils/soportes-exp-archivo');
 const { runSoportesRecoveryScript } = require('../utils/soportes-recovery-runner');
 const { syncRipsCarpetasDia, syncRipsCarpetasContenedor } = require('../utils/soportes-rips-carpetas-sync');
@@ -1598,13 +1598,14 @@ router.patch('/soportes/pdx/archivos/:id', requireAuth, requireRoleOrPerm(ROLES_
     }
     const temaCarpeta = detectarTemaCarpeta(prev.carpeta_nombre);
     let estudioFinal = estudio;
-    if (!estudioFinal && ['vtm', 'eeg', 'psg', 'actigrafia'].includes(temaCarpeta)) {
+    if (!estudioFinal && ['vtm', 'eeg', 'psg', 'actigrafia', 'latencia'].includes(temaCarpeta)) {
       estudioFinal = inferirEstudioDesdeCarpeta({ nombre_display: prev.carpeta_nombre });
     }
     if (!estudioFinal) {
       return res.status(400).json({ error: 'Apellidos, nombres, fecha y estudio son obligatorios' });
     }
-    const requiereDocumento = ['ordenes', 'comprobantes', 'consentimientos'].includes(temaCarpeta);
+    const { temaRequiereDocumentoPdx } = require('../utils/soportes-pdx-campos');
+    const requiereDocumento = temaRequiereDocumentoPdx(temaCarpeta);
     if (requiereDocumento && !numeroDocumentoValidoPdx(documento)) {
       return res.status(400).json({ error: 'El número de documento es obligatorio (solo dígitos, 4 a 20)' });
     }
@@ -2669,7 +2670,20 @@ router.patch('/soportes/armado/dias/:id', requireAuth, requireRoleOrPerm(ROLES_S
     if (req.body?.parent_id !== undefined) {
       const moveCheck = await validarMoverDiaArmado(db, diaId, req.body.parent_id);
       if (!moveCheck.ok) return res.status(moveCheck.status).json({ error: moveCheck.error });
-      await db.execute('UPDATE sop_dias SET parent_id = ? WHERE id = ?', [moveCheck.nuevoParentId, diaId]);
+      if (moveCheck.oldParentId !== moveCheck.nuevoParentId) {
+        const periodoRows = await db.query('SELECT periodo FROM sop_periodos WHERE id = ?', [moveCheck.dia.periodo_id]);
+        const diaConPeriodo = {
+          ...moveCheck.dia,
+          periodo: periodoRows[0]?.periodo || moveCheck.dia.periodo
+        };
+        // Disco primero (con padre viejo), luego BD.
+        await moverDiaEnDisco(diaConPeriodo, moveCheck.oldParentId, moveCheck.nuevoParentId);
+        const modoNuevo = moveCheck.modoDestino || moveCheck.dia.modo;
+        await db.execute(
+          'UPDATE sop_dias SET parent_id = ?, modo = ? WHERE id = ?',
+          [moveCheck.nuevoParentId, modoNuevo, diaId]
+        );
+      }
     }
     const result = await actualizarDia(req.params.id, req.body || {});
     if (result.error) return res.status(result.status || 400).json({ error: result.error });
@@ -2686,6 +2700,7 @@ router.patch('/soportes/armado/dias/:id', requireAuth, requireRoleOrPerm(ROLES_S
       dia: mapDia({ ...result.dia, expedientes_count: contenedores.reduce((s, c) => s + (c.expedientes_count || 0), 0) }),
       contenedores: contenedores.map(mapContenedor)
     });
+    notifySoportesArmado({ accion: 'dia_actualizado', diaId, periodoId: result.dia?.periodo_id });
   } catch (e) {
     logger.error('[SOPORTES] PATCH dia:', e);
     res.status(500).json({ error: safeError(e) });

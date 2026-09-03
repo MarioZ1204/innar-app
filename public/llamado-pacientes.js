@@ -5,7 +5,7 @@
 (function () {
   'use strict';
 
-  const STORAGE_KEY = 'innar_llamado_tv_doctores';
+  const STORAGE_KEY_LEGACY = 'innar_llamado_tv_doctores';
   const HISTORIAL_KEY = 'innar_llamado_tv_historial';
   const TAB_ACTIVE_KEY = 'innar_llamado_tv_tab_activa';
   const RELAY_KEY = 'innar_llamado_tv_relay';
@@ -33,6 +33,10 @@
   let relojTimer = null;
   let medicosRefreshTimer = null;
   let tabHeartbeatTimer = null;
+  let guardandoActivos = false;
+  let tvConfigFecha = null;
+  /** @type {Record<string, number>} */
+  let consultoriosJornada = {};
 
   let tabId = sessionStorage.getItem('innar_llamado_tab_id');
   if (!tabId) {
@@ -56,9 +60,19 @@
   /** @type {object[]} */
   let bufferPendienteModulo = [];
 
-  function fetchApi(url) {
-    if (typeof apiFetch === 'function') return apiFetch(url).then((r) => r.json());
-    return fetch(url, { credentials: 'include' }).then((r) => r.json());
+  function fetchApi(url, opts) {
+    if (typeof apiFetch === 'function') {
+      return apiFetch(url, opts).then(async (r) => {
+        const data = await r.json().catch(() => ({}));
+        if (!r.ok) throw new Error(data.error || `Error ${r.status}`);
+        return data;
+      });
+    }
+    return fetch(url, { credentials: 'include', ...(opts || {}) }).then(async (r) => {
+      const data = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(data.error || `Error ${r.status}`);
+      return data;
+    });
   }
 
   function escapeHtml(s) {
@@ -67,28 +81,109 @@
 
   function $(id) { return document.getElementById(id); }
 
-  /* ── Consultorios activos / bloqueados ── */
-
-  let consultoriosPrefGuardada = false;
-
-  function cargarConsultoriosActivos() {
-    consultoriosPrefGuardada = false;
-    try {
-      const raw = localStorage.getItem(STORAGE_KEY);
-      if (raw !== null) {
-        consultoriosPrefGuardada = true;
-        const ids = JSON.parse(raw);
-        if (Array.isArray(ids)) {
-          consultoriosActivos = new Set(ids.map(Number).filter(Boolean));
-          return;
-        }
-      }
-    } catch (_) { consultoriosPrefGuardada = false; }
-    consultoriosActivos = new Set();
+  function toastLlamado(msg, type) {
+    if (typeof showToast === 'function') showToast(msg, type || 'info');
+    else if (typeof sopToast === 'function') sopToast(msg, type || 'info');
   }
 
-  function guardarConsultoriosActivos() {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify([...consultoriosActivos]));
+  /* ── Consultorios activos / jornada (compartido en servidor) ── */
+
+  function aplicarTvConfig(payload, { silent } = {}) {
+    if (!payload || typeof payload !== 'object') return;
+    if (payload.fecha) tvConfigFecha = payload.fecha;
+    if (Array.isArray(payload.doctor_ids)) {
+      consultoriosActivos = new Set(payload.doctor_ids.map(Number).filter(Boolean));
+    }
+    if (payload.consultorios_jornada && typeof payload.consultorios_jornada === 'object') {
+      consultoriosJornada = {};
+      for (const [k, v] of Object.entries(payload.consultorios_jornada)) {
+        const n = parseInt(v, 10);
+        if (Number.isFinite(n) && n > 0) consultoriosJornada[String(k)] = n;
+      }
+    }
+    medicos = medicos.map((m) => enriquecerMedicoLocal(m));
+    if (!silent) {
+      renderConfigLista();
+      actualizarUiEstado();
+    }
+  }
+
+  function enriquecerMedicoLocal(m) {
+    const id = Number(m.id);
+    const base = m.numero_consultorio_base != null
+      ? m.numero_consultorio_base
+      : (m.numero_consultorio_permanente != null ? m.numero_consultorio_permanente : m.numero_consultorio);
+    const jornada = consultoriosJornada[String(id)];
+    const efectivo = jornada != null ? jornada : (m.numero_consultorio_efectivo != null
+      ? m.numero_consultorio_efectivo
+      : base);
+    return {
+      ...m,
+      numero_consultorio_base: base,
+      numero_consultorio_jornada: jornada != null ? jornada : null,
+      numero_consultorio_efectivo: efectivo,
+      numero_consultorio: efectivo
+    };
+  }
+
+  async function cargarTvConfig() {
+    try {
+      const data = await fetchApi('/api/llamado/tv-config');
+      aplicarTvConfig(data, { silent: true });
+      try { localStorage.removeItem(STORAGE_KEY_LEGACY); } catch (_) { /* noop */ }
+      return data;
+    } catch (e) {
+      // Fallback legacy solo si el servidor aún no tiene el endpoint
+      try {
+        const raw = localStorage.getItem(STORAGE_KEY_LEGACY);
+        if (raw !== null) {
+          const ids = JSON.parse(raw);
+          if (Array.isArray(ids)) {
+            consultoriosActivos = new Set(ids.map(Number).filter(Boolean));
+          }
+        }
+      } catch (_) { /* noop */ }
+      throw e;
+    }
+  }
+
+  async function guardarConsultoriosActivos() {
+    if (guardandoActivos) return;
+    guardandoActivos = true;
+    const ids = [...consultoriosActivos];
+    try {
+      const data = await fetchApi('/api/llamado/consultorios-activos', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ doctor_ids: ids })
+      });
+      aplicarTvConfig(data, { silent: true });
+    } catch (e) {
+      toastLlamado(e.message || 'No se pudo guardar consultorios activos', 'error');
+      try { await cargarTvConfig(); } catch (_) { /* noop */ }
+      renderConfigLista();
+      actualizarUiEstado();
+    } finally {
+      guardandoActivos = false;
+    }
+  }
+
+  async function guardarConsultorioJornada(doctorId, numero) {
+    const data = await fetchApi('/api/llamado/consultorio-jornada', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ doctor_id: doctorId, numero_consultorio: numero })
+    });
+    aplicarTvConfig(data);
+    return data;
+  }
+
+  async function restaurarConsultorioJornada(doctorId) {
+    const data = await fetchApi(`/api/llamado/consultorio-jornada/${doctorId}`, {
+      method: 'DELETE'
+    });
+    aplicarTvConfig(data);
+    return data;
   }
 
   function resolverDoctorId(item) {
@@ -252,18 +347,21 @@
 
   async function cargarMedicos() {
     try {
-      medicos = await fetchApi('/api/medicos');
-      if (!Array.isArray(medicos)) medicos = [];
+      const raw = await fetchApi('/api/medicos');
+      medicos = Array.isArray(raw) ? raw.map(enriquecerMedicoLocal) : [];
     } catch (_) {
       medicos = [];
     }
   }
 
-  async function asegurarConsultoriosIniciales() {
+  async function asegurarConfigLlamado() {
+    try {
+      await cargarTvConfig();
+    } catch (_) { /* fallback local ya aplicado en cargarTvConfig */ }
     await cargarMedicos();
-    if (!consultoriosPrefGuardada && !consultoriosActivos.size && medicos.length) {
+    if (!consultoriosActivos.size && medicos.length) {
       medicos.forEach((m) => consultoriosActivos.add(m.id));
-      guardarConsultoriosActivos();
+      await guardarConsultoriosActivos();
     }
   }
 
@@ -284,20 +382,44 @@
       return ca - cb || String(a.nombre).localeCompare(String(b.nombre));
     });
 
+    const fechaLbl = tvConfigFecha ? `Hoy (${tvConfigFecha})` : 'Hoy';
+
     lista.innerHTML = ordenados.map((m) => {
       const activo = consultoriosActivos.has(m.id);
-      const consNum = m.numero_consultorio != null ? String(m.numero_consultorio) : null;
-      const consTxt = consNum ? 'Recibe llamados en pantalla' : 'Sin consultorio asignado';
-      return `<label class="ltv-toggle-item${activo ? ' is-on' : ' is-off'}" data-doctor-id="${m.id}">
+      const base = m.numero_consultorio_base != null ? String(m.numero_consultorio_base) : '';
+      const efectivo = m.numero_consultorio != null ? String(m.numero_consultorio) : '';
+      const tieneOverride = m.numero_consultorio_jornada != null;
+      const consTxt = efectivo
+        ? (tieneOverride ? `Consultorio ${fechaLbl}` : 'Consultorio base')
+        : 'Sin consultorio asignado';
+      return `<div class="ltv-toggle-item${activo ? ' is-on' : ' is-off'}" data-doctor-id="${m.id}">
         <div class="ltv-toggle-item-info">
           <div class="ltv-toggle-item-nombre">${escapeHtml(m.nombre)}</div>
-          <div class="ltv-toggle-item-cons">${consNum ? `<span class="ltv-toggle-item-cons-num">${escapeHtml(consNum)}</span>` : ''}${escapeHtml(consTxt)}</div>
+          <div class="ltv-toggle-item-cons">
+            ${efectivo ? `<span class="ltv-toggle-item-cons-num">${escapeHtml(efectivo)}</span>` : ''}
+            ${escapeHtml(consTxt)}
+            ${base && tieneOverride ? `<span class="ltv-toggle-item-base">· base ${escapeHtml(base)}</span>` : ''}
+          </div>
+          <div class="ltv-cons-edit">
+            <label class="ltv-cons-edit-label">Nº consultorio</label>
+            <input type="number" min="1" class="ltv-cons-input" data-doctor-id="${m.id}"
+              value="${escapeHtml(efectivo)}" ${puedeConfigurarLlamado() ? '' : 'disabled'}
+              aria-label="Número de consultorio de ${escapeHtml(m.nombre)}" />
+            <button type="button" class="ltv-cons-save" data-doctor-id="${m.id}"
+              ${puedeConfigurarLlamado() ? '' : 'disabled'} title="Guardar número de hoy">Guardar</button>
+            ${tieneOverride
+              ? `<button type="button" class="ltv-cons-restore" data-doctor-id="${m.id}"
+                  ${puedeConfigurarLlamado() ? '' : 'disabled'} title="Volver al número base del doctor">Base</button>`
+              : ''}
+          </div>
         </div>
-        <div class="ltv-switch">
-          <input type="checkbox" ${activo ? 'checked' : ''} data-doctor-id="${m.id}" aria-label="Consultorio ${escapeHtml(m.nombre)}" />
+        <label class="ltv-switch" title="Activo en pantalla">
+          <input type="checkbox" ${activo ? 'checked' : ''} data-doctor-id="${m.id}"
+            ${puedeConfigurarLlamado() ? '' : 'disabled'}
+            aria-label="Consultorio ${escapeHtml(m.nombre)}" />
           <span class="ltv-switch-track"></span>
-        </div>
-      </label>`;
+        </label>
+      </div>`;
     }).join('');
 
     lista.querySelectorAll('input[type="checkbox"]').forEach((cb) => {
@@ -305,11 +427,47 @@
         const id = Number(cb.dataset.doctorId);
         if (cb.checked) consultoriosActivos.add(id);
         else consultoriosActivos.delete(id);
-        guardarConsultoriosActivos();
         const row = cb.closest('.ltv-toggle-item');
         row?.classList.toggle('is-on', cb.checked);
         row?.classList.toggle('is-off', !cb.checked);
         actualizarUiEstado();
+        guardarConsultoriosActivos();
+      });
+    });
+
+    lista.querySelectorAll('.ltv-cons-save').forEach((btn) => {
+      btn.addEventListener('click', async () => {
+        const id = Number(btn.dataset.doctorId);
+        const input = lista.querySelector(`.ltv-cons-input[data-doctor-id="${id}"]`);
+        const num = parseInt(input?.value, 10);
+        if (!Number.isFinite(num) || num < 1) {
+          toastLlamado('Indique un número de consultorio válido', 'warning');
+          return;
+        }
+        btn.disabled = true;
+        try {
+          await guardarConsultorioJornada(id, num);
+          toastLlamado('Consultorio actualizado para hoy', 'success');
+        } catch (e) {
+          toastLlamado(e.message || 'No se pudo guardar', 'error');
+        } finally {
+          btn.disabled = false;
+        }
+      });
+    });
+
+    lista.querySelectorAll('.ltv-cons-restore').forEach((btn) => {
+      btn.addEventListener('click', async () => {
+        const id = Number(btn.dataset.doctorId);
+        btn.disabled = true;
+        try {
+          await restaurarConsultorioJornada(id);
+          toastLlamado('Se restauró el consultorio base', 'success');
+        } catch (e) {
+          toastLlamado(e.message || 'No se pudo restaurar', 'error');
+        } finally {
+          btn.disabled = false;
+        }
       });
     });
   }
@@ -326,7 +484,7 @@
 
   function abrirConfig() {
     if (!puedeConfigurarLlamado()) return;
-    cargarMedicos().then(() => {
+    Promise.all([cargarTvConfig().catch(() => null), cargarMedicos()]).then(() => {
       renderConfigLista();
       $('llamadoConfigBackdrop')?.classList.remove('hidden');
       $('llamadoConfigPanel')?.classList.remove('hidden');
@@ -340,25 +498,25 @@
 
   function activarTodosConsultorios() {
     medicos.forEach((m) => consultoriosActivos.add(m.id));
-    guardarConsultoriosActivos();
     renderConfigLista();
     actualizarUiEstado();
+    guardarConsultoriosActivos();
   }
 
   function bloquearTodosConsultorios() {
     if (consultoriosActivos.size && typeof showConfirm === 'function') {
       showConfirm('¿Bloquear todos los consultorios? No se mostrarán llamados hasta activar al menos uno.', () => {
         consultoriosActivos.clear();
-        guardarConsultoriosActivos();
         renderConfigLista();
         actualizarUiEstado();
+        guardarConsultoriosActivos();
       }, { okText: 'Bloquear todos', icon: '🔇' });
       return;
     }
     consultoriosActivos.clear();
-    guardarConsultoriosActivos();
     renderConfigLista();
     actualizarUiEstado();
+    guardarConsultoriosActivos();
   }
 
   function cargarHistorialLocal() {
@@ -965,6 +1123,19 @@
     const attach = () => {
       if (!window.socket || boundRealtime) return;
       window.socket.on('agenda:anunciar-paciente', onLlamadoEvent);
+      window.socket.on('llamado:tv-config', (payload) => {
+        aplicarTvConfig(payload || {});
+        cargarMedicos().then(() => {
+          if (!$('llamadoConfigPanel')?.classList.contains('hidden')) renderConfigLista();
+          actualizarUiEstado();
+        });
+      });
+      window.socket.on('agenda:medicos-consultorio', () => {
+        cargarTvConfig().catch(() => null).then(() => cargarMedicos()).then(() => {
+          if (!$('llamadoConfigPanel')?.classList.contains('hidden')) renderConfigLista();
+          actualizarUiEstado();
+        });
+      });
       boundRealtime = true;
     };
     if (window.socketReady && window.socket) attach();
@@ -975,7 +1146,13 @@
     if (medicosRefreshTimer) clearInterval(medicosRefreshTimer);
     medicosRefreshTimer = setInterval(() => {
       if (window.currentModule !== 'llamado-pacientes') return;
-      cargarMedicos();
+      Promise.all([
+        cargarTvConfig().catch(() => null),
+        cargarMedicos()
+      ]).then(() => {
+        if (!$('llamadoConfigPanel')?.classList.contains('hidden')) renderConfigLista();
+        actualizarUiEstado();
+      });
     }, MEDICOS_REFRESH_MS);
   }
 
@@ -1050,10 +1227,9 @@
       bindRealtime();
     }
 
-    cargarConsultoriosActivos();
     cargarHistorialLocal();
     if (!procesando) ocultarPopup();
-    await asegurarConsultoriosIniciales();
+    await asegurarConfigLlamado();
     aplicarPermisosUiLlamado();
     renderConfigLista();
     actualizarUiEstado();

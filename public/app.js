@@ -4543,6 +4543,12 @@ async function initAgendaMedica() {
     window.socket.on('agenda:turno-creado', recargar);
     window.socket.on('agenda:turno-eliminado', recargar);
     window.socket.on('agenda:turno-marcar-atendido', recargar);
+    window.socket.on('agenda:medicos-consultorio', () => {
+      apiFetch('/api/medicos').then((r) => r.json()).then((list) => {
+        window._medicosAgendaList = Array.isArray(list) ? list : [];
+        if (typeof cargarTurnosMedica === 'function') cargarTurnosMedica();
+      }).catch(() => {});
+    });
     window.socketAgendaMedicaListenerAdded = true;
   }
   bindAgendaMedicaRealtimeListeners();
