@@ -35,8 +35,6 @@
   let tabHeartbeatTimer = null;
   let guardandoActivos = false;
   let tvConfigFecha = null;
-  /** @type {Record<string, number>} */
-  let consultoriosJornada = {};
 
   let tabId = sessionStorage.getItem('innar_llamado_tab_id');
   if (!tabId) {
@@ -86,7 +84,7 @@
     else if (typeof sopToast === 'function') sopToast(msg, type || 'info');
   }
 
-  /* ── Consultorios activos / jornada (compartido en servidor) ── */
+  /* ── Consultorios activos en TV (compartido en servidor) ── */
 
   function aplicarTvConfig(payload, { silent } = {}) {
     if (!payload || typeof payload !== 'object') return;
@@ -94,36 +92,10 @@
     if (Array.isArray(payload.doctor_ids)) {
       consultoriosActivos = new Set(payload.doctor_ids.map(Number).filter(Boolean));
     }
-    if (payload.consultorios_jornada && typeof payload.consultorios_jornada === 'object') {
-      consultoriosJornada = {};
-      for (const [k, v] of Object.entries(payload.consultorios_jornada)) {
-        const n = parseInt(v, 10);
-        if (Number.isFinite(n) && n > 0) consultoriosJornada[String(k)] = n;
-      }
-    }
-    medicos = medicos.map((m) => enriquecerMedicoLocal(m));
     if (!silent) {
       renderConfigLista();
       actualizarUiEstado();
     }
-  }
-
-  function enriquecerMedicoLocal(m) {
-    const id = Number(m.id);
-    const base = m.numero_consultorio_base != null
-      ? m.numero_consultorio_base
-      : (m.numero_consultorio_permanente != null ? m.numero_consultorio_permanente : m.numero_consultorio);
-    const jornada = consultoriosJornada[String(id)];
-    const efectivo = jornada != null ? jornada : (m.numero_consultorio_efectivo != null
-      ? m.numero_consultorio_efectivo
-      : base);
-    return {
-      ...m,
-      numero_consultorio_base: base,
-      numero_consultorio_jornada: jornada != null ? jornada : null,
-      numero_consultorio_efectivo: efectivo,
-      numero_consultorio: efectivo
-    };
   }
 
   async function cargarTvConfig() {
@@ -133,7 +105,6 @@
       try { localStorage.removeItem(STORAGE_KEY_LEGACY); } catch (_) { /* noop */ }
       return data;
     } catch (e) {
-      // Fallback legacy solo si el servidor aún no tiene el endpoint
       try {
         const raw = localStorage.getItem(STORAGE_KEY_LEGACY);
         if (raw !== null) {
@@ -166,24 +137,6 @@
     } finally {
       guardandoActivos = false;
     }
-  }
-
-  async function guardarConsultorioJornada(doctorId, numero) {
-    const data = await fetchApi('/api/llamado/consultorio-jornada', {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ doctor_id: doctorId, numero_consultorio: numero })
-    });
-    aplicarTvConfig(data);
-    return data;
-  }
-
-  async function restaurarConsultorioJornada(doctorId) {
-    const data = await fetchApi(`/api/llamado/consultorio-jornada/${doctorId}`, {
-      method: 'DELETE'
-    });
-    aplicarTvConfig(data);
-    return data;
   }
 
   function resolverDoctorId(item) {
@@ -348,7 +301,7 @@
   async function cargarMedicos() {
     try {
       const raw = await fetchApi('/api/medicos');
-      medicos = Array.isArray(raw) ? raw.map(enriquecerMedicoLocal) : [];
+      medicos = Array.isArray(raw) ? raw : [];
     } catch (_) {
       medicos = [];
     }
@@ -382,35 +335,18 @@
       return ca - cb || String(a.nombre).localeCompare(String(b.nombre));
     });
 
-    const fechaLbl = tvConfigFecha ? `Hoy (${tvConfigFecha})` : 'Hoy';
-
     lista.innerHTML = ordenados.map((m) => {
       const activo = consultoriosActivos.has(m.id);
-      const base = m.numero_consultorio_base != null ? String(m.numero_consultorio_base) : '';
-      const efectivo = m.numero_consultorio != null ? String(m.numero_consultorio) : '';
-      const tieneOverride = m.numero_consultorio_jornada != null;
-      const consTxt = efectivo
-        ? (tieneOverride ? `Consultorio ${fechaLbl}` : 'Consultorio base')
-        : 'Sin consultorio asignado';
+      const consNum = m.numero_consultorio != null ? String(m.numero_consultorio) : null;
+      const consTxt = consNum
+        ? 'Recibe llamados en pantalla · Nº se cambia en Agenda médica'
+        : 'Sin consultorio asignado (defínalo en Agenda médica)';
       return `<div class="ltv-toggle-item${activo ? ' is-on' : ' is-off'}" data-doctor-id="${m.id}">
         <div class="ltv-toggle-item-info">
           <div class="ltv-toggle-item-nombre">${escapeHtml(m.nombre)}</div>
           <div class="ltv-toggle-item-cons">
-            ${efectivo ? `<span class="ltv-toggle-item-cons-num">${escapeHtml(efectivo)}</span>` : ''}
+            ${consNum ? `<span class="ltv-toggle-item-cons-num">${escapeHtml(consNum)}</span>` : ''}
             ${escapeHtml(consTxt)}
-            ${base && tieneOverride ? `<span class="ltv-toggle-item-base">· base ${escapeHtml(base)}</span>` : ''}
-          </div>
-          <div class="ltv-cons-edit">
-            <label class="ltv-cons-edit-label">Nº consultorio</label>
-            <input type="number" min="1" class="ltv-cons-input" data-doctor-id="${m.id}"
-              value="${escapeHtml(efectivo)}" ${puedeConfigurarLlamado() ? '' : 'disabled'}
-              aria-label="Número de consultorio de ${escapeHtml(m.nombre)}" />
-            <button type="button" class="ltv-cons-save" data-doctor-id="${m.id}"
-              ${puedeConfigurarLlamado() ? '' : 'disabled'} title="Guardar número de hoy">Guardar</button>
-            ${tieneOverride
-              ? `<button type="button" class="ltv-cons-restore" data-doctor-id="${m.id}"
-                  ${puedeConfigurarLlamado() ? '' : 'disabled'} title="Volver al número base del doctor">Base</button>`
-              : ''}
           </div>
         </div>
         <label class="ltv-switch" title="Activo en pantalla">
@@ -432,42 +368,6 @@
         row?.classList.toggle('is-off', !cb.checked);
         actualizarUiEstado();
         guardarConsultoriosActivos();
-      });
-    });
-
-    lista.querySelectorAll('.ltv-cons-save').forEach((btn) => {
-      btn.addEventListener('click', async () => {
-        const id = Number(btn.dataset.doctorId);
-        const input = lista.querySelector(`.ltv-cons-input[data-doctor-id="${id}"]`);
-        const num = parseInt(input?.value, 10);
-        if (!Number.isFinite(num) || num < 1) {
-          toastLlamado('Indique un número de consultorio válido', 'warning');
-          return;
-        }
-        btn.disabled = true;
-        try {
-          await guardarConsultorioJornada(id, num);
-          toastLlamado('Consultorio actualizado para hoy', 'success');
-        } catch (e) {
-          toastLlamado(e.message || 'No se pudo guardar', 'error');
-        } finally {
-          btn.disabled = false;
-        }
-      });
-    });
-
-    lista.querySelectorAll('.ltv-cons-restore').forEach((btn) => {
-      btn.addEventListener('click', async () => {
-        const id = Number(btn.dataset.doctorId);
-        btn.disabled = true;
-        try {
-          await restaurarConsultorioJornada(id);
-          toastLlamado('Se restauró el consultorio base', 'success');
-        } catch (e) {
-          toastLlamado(e.message || 'No se pudo restaurar', 'error');
-        } finally {
-          btn.disabled = false;
-        }
       });
     });
   }

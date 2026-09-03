@@ -324,6 +324,90 @@ function obtenerConsultorioMedicoAgenda(doctorId) {
   return m?.numero_consultorio ?? null;
 }
 
+function puedeCambiarConsultorioAgenda() {
+  if (typeof tienePermiso !== 'function') return false;
+  return tienePermiso('agenda.cambiar_consultorio') || tienePermiso('usuarios.editar');
+}
+
+function actualizarConsultorioAgendaUi() {
+  const display = $('agendaMedicaConsultorioDisplay');
+  const btn = $('btnAgendaCambiarConsultorio');
+  const doctorId = selectedDoctorId || (currentUser?.rol === 'doctor' ? currentUser?.id : null);
+  const num = doctorId ? obtenerConsultorioMedicoAgenda(doctorId) : null;
+  if (display) display.textContent = num != null && num !== '' ? `N° ${num}` : '—';
+  if (btn) {
+    const puede = !!doctorId && puedeCambiarConsultorioAgenda();
+    const esDoctorAjeno = currentUser?.rol === 'doctor' && parseInt(currentUser?.id, 10) !== parseInt(doctorId, 10);
+    btn.style.display = puede && !esDoctorAjeno ? '' : 'none';
+  }
+}
+
+function modalCambiarConsultorioAgenda() {
+  const doctorId = selectedDoctorId || (currentUser?.rol === 'doctor' ? currentUser?.id : null);
+  if (!doctorId) return showToast('Seleccione un médico primero', 'warning');
+  if (!puedeCambiarConsultorioAgenda()) return showToast('No tiene permiso para cambiar el consultorio', 'error');
+  if (currentUser?.rol === 'doctor' && parseInt(currentUser?.id, 10) !== parseInt(doctorId, 10)) {
+    return showToast('Solo puede cambiar su propio consultorio', 'error');
+  }
+  const medico = (window._medicosAgendaList || []).find((m) => parseInt(m.id, 10) === parseInt(doctorId, 10));
+  const actual = medico?.numero_consultorio ?? '';
+  const nombre = medico?.nombre || $('agendaMedicaDoctorDisplay')?.textContent || 'médico';
+  const wrap = document.createElement('div');
+  wrap.className = 'modal-overlay modal-overlay--center';
+  wrap.innerHTML = `
+    <div class="modal-box" style="max-width:420px" role="dialog" aria-labelledby="agConsTitle">
+      <h3 id="agConsTitle" style="margin-top:0">Cambiar consultorio</h3>
+      <p style="font-size:.9rem;color:#64748b;margin:-4px 0 14px">Médico: <strong>${escapeHtml(nombre)}</strong>. El nuevo número se guarda en el usuario y aplica en llamado, agenda y todo el sistema.</p>
+      <label for="agConsInput" style="display:block;font-weight:600;margin-bottom:6px">Número de consultorio</label>
+      <input id="agConsInput" type="number" min="1" value="${escapeHtml(String(actual || ''))}" style="width:100%;padding:10px 12px;border:1px solid #d1d5db;border-radius:8px;box-sizing:border-box;font-size:1rem;font-weight:700" />
+      <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:16px">
+        <button type="button" class="btn-secondary" id="agConsCancel">Cancelar</button>
+        <button type="button" class="btn-primary" id="agConsOk">Guardar</button>
+      </div>
+    </div>`;
+  document.body.appendChild(wrap);
+  const input = wrap.querySelector('#agConsInput');
+  input?.focus();
+  input?.select();
+  const cerrar = () => wrap.remove();
+  wrap.querySelector('#agConsCancel').onclick = cerrar;
+  wrap.addEventListener('click', (e) => { if (e.target === wrap) cerrar(); });
+  wrap.querySelector('#agConsOk').onclick = async () => {
+    const num = parseInt(input?.value, 10);
+    if (!Number.isFinite(num) || num < 1) {
+      showToast('Indique un número de consultorio válido', 'warning');
+      return;
+    }
+    const btn = wrap.querySelector('#agConsOk');
+    btn.disabled = true;
+    try {
+      const res = await apiFetch(`/api/medicos/${doctorId}/consultorio`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ numero_consultorio: num })
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || 'No se pudo guardar');
+      if (Array.isArray(window._medicosAgendaList)) {
+        window._medicosAgendaList = window._medicosAgendaList.map((m) => (
+          parseInt(m.id, 10) === parseInt(doctorId, 10)
+            ? { ...m, numero_consultorio: num }
+            : m
+        ));
+      }
+      if (currentUser && parseInt(currentUser.id, 10) === parseInt(doctorId, 10)) {
+        currentUser.numero_consultorio = num;
+      }
+      actualizarConsultorioAgendaUi();
+      cerrar();
+      showToast(data.sin_cambios ? 'El consultorio ya tenía ese número' : `Consultorio actualizado a N° ${num}`, 'success');
+    } catch (e) {
+      showToast(e.message || 'Error al guardar', 'error');
+      btn.disabled = false;
+    }
+  };
+}
+
 function obtenerNombreMedicoAgenda(doctorId) {
   const id = parseInt(doctorId, 10);
   if (!Number.isFinite(id)) return null;
@@ -4474,6 +4558,11 @@ async function initAgendaMedica() {
     // Sin doctor seleccionado (roles no doctor): mantener vacío hasta seleccionar uno desde menú
     $('agendaMedicaDoctorDisplay').textContent = '-';
   }
+  actualizarConsultorioAgendaUi();
+  if (!window._agendaConsultorioBtnBound) {
+    window._agendaConsultorioBtnBound = true;
+    $('btnAgendaCambiarConsultorio')?.addEventListener('click', () => modalCambiarConsultorioAgenda());
+  }
 
   // Sincronizar el calendario de programación con el doctor activo actual
   // incluso si ya había sido inicializado antes.
@@ -4543,11 +4632,18 @@ async function initAgendaMedica() {
     window.socket.on('agenda:turno-creado', recargar);
     window.socket.on('agenda:turno-eliminado', recargar);
     window.socket.on('agenda:turno-marcar-atendido', recargar);
-    window.socket.on('agenda:medicos-consultorio', () => {
-      apiFetch('/api/medicos').then((r) => r.json()).then((list) => {
-        window._medicosAgendaList = Array.isArray(list) ? list : [];
-        if (typeof cargarTurnosMedica === 'function') cargarTurnosMedica();
-      }).catch(() => {});
+    window.socket.on('agenda:medicos-consultorio', (payload) => {
+      const doctorId = parseInt(payload?.doctor_id || payload?.id, 10);
+      const num = payload?.numero_consultorio;
+      if (Number.isFinite(doctorId) && Array.isArray(window._medicosAgendaList)) {
+        window._medicosAgendaList = window._medicosAgendaList.map((m) => (
+          parseInt(m.id, 10) === doctorId
+            ? { ...m, numero_consultorio: num }
+            : m
+        ));
+      }
+      actualizarConsultorioAgendaUi();
+      if (typeof cargarTurnosMedica === 'function') cargarTurnosMedica();
     });
     window.socketAgendaMedicaListenerAdded = true;
   }
@@ -10098,6 +10194,7 @@ const PERMISOS_DEFS = [
   { key: 'agenda.aviso_doctor',         label: 'Enviar aviso al doctor',              grupo: 'Agenda Médica' },
   { key: 'agenda.disponibilidad',       label: 'Programar disponibilidad',            grupo: 'Agenda Médica' },
   { key: 'agenda.editar_siempre',       label: 'Editar citas en cualquier estado',    grupo: 'Agenda Médica' },
+  { key: 'agenda.cambiar_consultorio',  label: 'Cambiar número de consultorio del médico', grupo: 'Agenda Médica' },
   // ── Chat interno ───────────────────────────────────────────────────────────
   { key: 'chat.usar',                   label: 'Usar chat (Messenger interno)',       grupo: 'Chat' },
   // ── Llamado de pacientes (pantalla) ───────────────────────────────────────
@@ -10179,6 +10276,7 @@ const PERMISOS_ROL_DEFAULTS = {
     'recibos.crear','recibos.ver','recibos.exportar','recibos.pagar','recibos.pendiente',
     'agenda.ver','agenda.crear','agenda.editar','agenda.eliminar','agenda.cambiar_estado',
     'agenda.llamar_siguiente','agenda.marcar_atendido','agenda.aviso_doctor','agenda.disponibilidad',
+    'agenda.cambiar_consultorio',
     'electro.ver','electro.crear','electro.editar','electro.cambiar_estado','electro.subir_archivo','electro.ver_archivo','electro.aviso_doctor',
     'sistema.dashboard',
   ],
@@ -10192,6 +10290,7 @@ const PERMISOS_ROL_DEFAULTS = {
     'recibos.crear','recibos.ver','recibos.pagar','recibos.pendiente',
     'agenda.ver','agenda.crear','agenda.editar','agenda.eliminar','agenda.cambiar_estado',
     'agenda.llamar_siguiente','agenda.marcar_atendido','agenda.aviso_doctor',
+    'agenda.cambiar_consultorio',
     'electro.ver','electro.crear','electro.editar','electro.cambiar_estado',
     'sistema.dashboard',
   ],
@@ -10201,12 +10300,14 @@ const PERMISOS_ROL_DEFAULTS = {
     'soportes.pdx.ver','soportes.pdx.subir',
     'recibos.crear','recibos.ver','recibos.pagar','recibos.pendiente',
     'agenda.ver','agenda.crear','agenda.editar','agenda.cambiar_estado','agenda.aviso_doctor',
+    'agenda.cambiar_consultorio',
     'electro.ver','electro.crear',
   ],
   doctor: [
     'modulo.agenda_medica','modulo.electrodiag','modulo.dashboard',
     'modulo.documentos_cita',
     'agenda.ver','agenda.cambiar_estado','agenda.llamar_siguiente','agenda.marcar_atendido','agenda.disponibilidad',
+    'agenda.cambiar_consultorio',
     'electro.ver','electro.cambiar_estado','electro.subir_archivo','electro.ver_archivo',
     'sistema.dashboard',
     'chat.usar',

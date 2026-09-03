@@ -155,11 +155,10 @@ async function resolverNumeroConsultorioDoctor(db, doctorId, fechaTurno, numeroB
 async function getTvConfigPayload(db) {
   const fecha = hoyColombiaISO();
   const doctor_ids = await getConsultoriosActivos(db);
-  const { map } = await getConsultoriosJornadaMap(db, fecha);
   return {
     fecha,
     doctor_ids,
-    consultorios_jornada: map
+    consultorios_jornada: {}
   };
 }
 

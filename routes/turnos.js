@@ -14,7 +14,6 @@ const { buildReprogramacionTurnoPayload } = require('../utils/agenda-reprogramac
 const { validarTransicionEstadoTurno } = require('../utils/agenda-estado-transiciones');
 const cuposEntidadAgenda = require('../utils/cupos-entidad-agenda');
 const { desvincularRecibosDeTurnos } = require('../utils/recibos-vinculo');
-const { resolverNumeroConsultorioDoctor } = require('../utils/llamado-tv-config');
 const {
   httpError,
   responderSiHttpError,
@@ -24,19 +23,16 @@ const {
   bloquearTurnosDoctorDia
 } = require('../utils/locks-concurrencia');
 
-async function doctorParaAnuncio(doctorId, fechaTurno) {
+async function doctorParaAnuncio(doctorId) {
   const rows = await db.query(
     'SELECT numero_consultorio, nombre FROM usuarios WHERE id = ?',
     [doctorId]
   );
   const doctor = rows.length > 0 ? rows[0] : {};
-  const numero = await resolverNumeroConsultorioDoctor(
-    db,
-    doctorId,
-    fechaTurno,
-    doctor.numero_consultorio
-  );
-  return { nombre: doctor.nombre || null, numero_consultorio: numero };
+  return {
+    nombre: doctor.nombre || null,
+    numero_consultorio: doctor.numero_consultorio ?? null
+  };
 }
 
 // Helper: obtener siguiente número de turno
@@ -462,7 +458,7 @@ router.post('/turnos/llamar-siguiente', requireAuth, requireRoleOrPerm(['superad
   const idorErr = denyIfDoctorMismatch(req, doctor_id);
   if (idorErr) return res.status(403).json({ error: idorErr });
   try {
-    const doctor = await doctorParaAnuncio(doctor_id, fecha);
+    const doctor = await doctorParaAnuncio(doctor_id);
     const numeroConsultorio = doctor.numero_consultorio;
     const doctorNombre = doctor.nombre;
 
@@ -529,7 +525,7 @@ router.post('/turnos/:id/llamar', requireAuth, requireRoleOrPerm(['superadmin', 
       });
     }
 
-    const doctor = await doctorParaAnuncio(turno.doctor_id, turno.fecha);
+    const doctor = await doctorParaAnuncio(turno.doctor_id);
     const callId = nuevoCallIdAnuncio();
     const payload = payloadAnuncioPaciente(turno, doctor, callId);
     emitSocket('agenda:anunciar-paciente', payload);
@@ -1282,7 +1278,7 @@ router.patch('/turnos/:id/estado', requireAuth, requireRoleOrPerm(['superadmin',
       fecha: turno.fecha
     };
       if (estado === 'EN_ATENCION') {
-        const doctorAnuncio = await doctorParaAnuncio(turno.doctor_id, turno.fecha);
+        const doctorAnuncio = await doctorParaAnuncio(turno.doctor_id);
         emitData.numero_consultorio = doctorAnuncio.numero_consultorio;
       }
       emitSocket('agenda:turno-estado-cambio', emitData);

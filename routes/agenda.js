@@ -29,9 +29,6 @@ router.get('/consultorios', requireAuth, async (req, res) => {
 // --- Médicos ---
 router.get('/medicos', requireAuth, async (req, res) => {
   try {
-    const { hoyColombiaISO, getConsultoriosJornadaMap } = require('../utils/llamado-tv-config');
-    const fecha = hoyColombiaISO();
-    const { map: jornadaMap } = await getConsultoriosJornadaMap(db, fecha);
     const medicos = await db.query(`
       SELECT u.id, u.nombre, u.usuario, u.especialidad, u.numero_consultorio,
              e.id AS especialidad_id
@@ -40,24 +37,88 @@ router.get('/medicos', requireAuth, async (req, res) => {
       WHERE u.rol = 'doctor' AND u.activo = 1
       ORDER BY u.nombre ASC
     `);
-    res.json((medicos || []).map((m) => {
-      const base = m.numero_consultorio;
-      const hoy = jornadaMap[m.id];
-      const efectivo = hoy != null ? hoy : base;
-      return {
-        ...m,
-        numero_consultorio_base: base,
-        numero_consultorio_jornada: hoy != null ? hoy : null,
-        numero_consultorio_efectivo: efectivo,
-        // Compat: la agenda/TV usan el número efectivo del día
-        numero_consultorio: efectivo
-      };
-    }));
+    res.json(medicos);
   } catch (e) {
     logger.error(e.message, { error: e });
     res.status(500).json({ error: safeError(e) });
   }
 });
+
+/**
+ * Cambia el número de consultorio del médico en usuarios (permanente, todo el sistema).
+ * Disponible desde Agenda médica (no requiere módulo Usuarios).
+ */
+router.patch(
+  '/medicos/:id/consultorio',
+  requireAuth,
+  requireRoleOrPerm([], ['agenda.cambiar_consultorio', 'usuarios.editar']),
+  async (req, res) => {
+    const id = parseInt(req.params.id, 10);
+    const num = parseInt(req.body?.numero_consultorio, 10);
+    if (!id) return res.status(400).json({ error: 'ID de médico inválido' });
+    if (!Number.isFinite(num) || num < 1) {
+      return res.status(400).json({ error: 'Indique un número de consultorio válido (≥ 1)' });
+    }
+    if (req.session?.rol === 'doctor' && parseInt(req.session.usuarioId, 10) !== id) {
+      return res.status(403).json({ error: 'Solo puede cambiar su propio consultorio' });
+    }
+    try {
+      const rows = await db.query(
+        `SELECT id, nombre, rol, numero_consultorio FROM usuarios WHERE id = ? AND rol = 'doctor'`,
+        [id]
+      );
+      const user = rows[0];
+      if (!user) return res.status(404).json({ error: 'Médico no encontrado' });
+      if (Number(user.numero_consultorio) === num) {
+        return res.json({
+          ok: true,
+          id,
+          nombre: user.nombre,
+          numero_consultorio: num,
+          sin_cambios: true
+        });
+      }
+      await db.execute('UPDATE usuarios SET numero_consultorio = ? WHERE id = ?', [num, id]);
+      try {
+        const auditLog = require('../modules/audit-log');
+        await auditLog.registrarAuditoria({
+          usuarioId: id,
+          adminId: req.session.usuarioId,
+          adminUsuario: req.session.usuario,
+          accion: 'ACTUALIZAR',
+          cambios: {
+            numero_consultorio: { antes: user.numero_consultorio, despues: num }
+          },
+          ip: req.ip
+        });
+      } catch (_) { /* auditoría best-effort */ }
+
+      // Limpia overrides de jornada antiguos (si existían) para no confundir.
+      try {
+        await db.execute('DELETE FROM llamado_consultorio_jornada WHERE doctor_id = ?', [id]);
+      } catch (_) { /* tabla puede no existir aún */ }
+
+      const payload = {
+        doctor_id: id,
+        id,
+        nombre: user.nombre,
+        numero_consultorio: num,
+        antes: user.numero_consultorio
+      };
+      emitSocket('usuario:actualizado', { id });
+      emitSocket('agenda:medicos-consultorio', payload);
+      emitSocket('agenda:actualizar-consultorio', payload);
+      try {
+        const tv = await require('../utils/llamado-tv-config').getTvConfigPayload(db);
+        emitSocket('llamado:tv-config', tv);
+      } catch (_) { /* noop */ }
+      res.json({ ok: true, ...payload });
+    } catch (e) {
+      logger.error(e.message, { error: e });
+      res.status(500).json({ error: safeError(e) });
+    }
+  }
+);
 
 // --- Doctor Agenda ---
 

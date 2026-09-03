@@ -248,6 +248,17 @@ router.patch('/:id', requireAuth, requireRoleOrPerm(['superadmin', 'admin'], 'us
     }
 
     emitSocket('usuario:actualizado', { id });
+    if (cambios.numero_consultorio) {
+      emitSocket('agenda:medicos-consultorio', {
+        doctor_id: id,
+        id,
+        numero_consultorio: cambios.numero_consultorio.despues
+      });
+      emitSocket('agenda:actualizar-consultorio', {
+        doctor_id: id,
+        numero_consultorio: cambios.numero_consultorio.despues
+      });
+    }
     res.json({ ok: true });
   } catch (e) {
     if (e.message && e.message.includes('UNIQUE')) return res.status(400).json({ error: 'El usuario ya existe' });

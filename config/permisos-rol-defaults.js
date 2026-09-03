@@ -15,6 +15,7 @@ const PERMISOS_ROL_DEFAULTS = {
     'recibos.crear', 'recibos.ver', 'recibos.exportar', 'recibos.pagar', 'recibos.pendiente',
     'agenda.ver', 'agenda.crear', 'agenda.editar', 'agenda.eliminar', 'agenda.cambiar_estado',
     'agenda.llamar_siguiente', 'agenda.marcar_atendido', 'agenda.aviso_doctor', 'agenda.disponibilidad',
+    'agenda.cambiar_consultorio',
     'electro.ver', 'electro.crear', 'electro.editar', 'electro.cambiar_estado', 'electro.subir_archivo', 'electro.ver_archivo', 'electro.aviso_doctor',
     'sistema.dashboard'
   ],
@@ -28,6 +29,7 @@ const PERMISOS_ROL_DEFAULTS = {
     'recibos.crear', 'recibos.ver', 'recibos.pagar', 'recibos.pendiente',
     'agenda.ver', 'agenda.crear', 'agenda.editar', 'agenda.eliminar', 'agenda.cambiar_estado',
     'agenda.llamar_siguiente', 'agenda.marcar_atendido', 'agenda.aviso_doctor',
+    'agenda.cambiar_consultorio',
     'electro.ver', 'electro.crear', 'electro.editar', 'electro.cambiar_estado',
     'sistema.dashboard'
   ],
@@ -37,6 +39,7 @@ const PERMISOS_ROL_DEFAULTS = {
     'soportes.pdx.ver', 'soportes.pdx.subir',
     'recibos.crear', 'recibos.ver', 'recibos.pagar', 'recibos.pendiente',
     'agenda.ver', 'agenda.crear', 'agenda.editar', 'agenda.cambiar_estado', 'agenda.aviso_doctor',
+    'agenda.cambiar_consultorio',
     'electro.ver', 'electro.crear'
   ],
   admin_electro: [
@@ -71,6 +74,7 @@ const PERMISOS_ROL_DEFAULTS = {
     'modulo.agenda_medica', 'modulo.electrodiag', 'modulo.dashboard',
     'modulo.documentos_cita',
     'agenda.ver', 'agenda.cambiar_estado', 'agenda.llamar_siguiente', 'agenda.marcar_atendido', 'agenda.disponibilidad',
+    'agenda.cambiar_consultorio',
     'electro.ver', 'electro.cambiar_estado', 'electro.subir_archivo', 'electro.ver_archivo',
     'sistema.dashboard',
     'chat.usar',

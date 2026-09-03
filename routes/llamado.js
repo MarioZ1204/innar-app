@@ -1,5 +1,6 @@
 /**
  * API del módulo Llamado de pacientes (voz neural + config TV compartida).
+ * El número de consultorio del médico se cambia en Agenda médica (usuarios.numero_consultorio).
  */
 const express = require('express');
 const router = express.Router();
@@ -8,11 +9,7 @@ const { synthesizeLlamadoTts } = require('../utils/llamado-tts');
 const db = require('../utils/db-mysql');
 const {
   getTvConfigPayload,
-  setConsultoriosActivos,
-  setConsultorioJornada,
-  clearConsultorioJornada,
-  getConsultoriosJornadaMap,
-  hoyColombiaISO
+  setConsultoriosActivos
 } = require('../utils/llamado-tv-config');
 
 function emitTvConfig(payload) {
@@ -38,7 +35,7 @@ router.get(
   }
 );
 
-/** Estado compartido: doctores activos en TV + números de consultorio de hoy. */
+/** Estado compartido: doctores activos en TV. */
 router.get(
   '/llamado/tv-config',
   requireAuth,
@@ -65,73 +62,6 @@ router.put(
       const payload = await getTvConfigPayload(db);
       emitTvConfig(payload);
       res.json({ ok: true, ...result, ...payload });
-    } catch (e) {
-      res.status(500).json({ error: safeError(e) });
-    }
-  }
-);
-
-router.put(
-  '/llamado/consultorio-jornada',
-  requireAuth,
-  requireRoleOrPerm([], ['llamado.configurar', 'modulo.llamado_pacientes']),
-  async (req, res) => {
-    try {
-      const result = await setConsultorioJornada(
-        db,
-        req.body?.doctor_id,
-        req.body?.numero_consultorio,
-        req.body?.fecha,
-        req.session?.usuarioId
-      );
-      if (result.error) return res.status(result.status || 400).json({ error: result.error });
-      const payload = await getTvConfigPayload(db);
-      emitTvConfig(payload);
-      emitSocket('agenda:medicos-consultorio', {
-        doctor_id: result.doctor_id,
-        fecha: result.fecha,
-        numero_consultorio: result.numero_consultorio
-      });
-      res.json({ ok: true, ...result, ...payload });
-    } catch (e) {
-      res.status(500).json({ error: safeError(e) });
-    }
-  }
-);
-
-router.delete(
-  '/llamado/consultorio-jornada/:doctorId',
-  requireAuth,
-  requireRoleOrPerm([], ['llamado.configurar', 'modulo.llamado_pacientes']),
-  async (req, res) => {
-    try {
-      const result = await clearConsultorioJornada(db, req.params.doctorId, req.query?.fecha);
-      if (result.error) return res.status(result.status || 400).json({ error: result.error });
-      const payload = await getTvConfigPayload(db);
-      emitTvConfig(payload);
-      emitSocket('agenda:medicos-consultorio', {
-        doctor_id: result.doctor_id,
-        fecha: result.fecha,
-        numero_consultorio: null,
-        restaurado: true
-      });
-      res.json({ ok: true, ...result, ...payload });
-    } catch (e) {
-      res.status(500).json({ error: safeError(e) });
-    }
-  }
-);
-
-/** Utilidad: mapa de jornada (misma fecha Colombia o ?fecha=). */
-router.get(
-  '/llamado/consultorio-jornada',
-  requireAuth,
-  requireRoleOrPerm([], 'modulo.llamado_pacientes'),
-  async (req, res) => {
-    try {
-      const fecha = req.query?.fecha || hoyColombiaISO();
-      const data = await getConsultoriosJornadaMap(db, fecha);
-      res.json({ fecha: data.fecha, consultorios_jornada: data.map });
     } catch (e) {
       res.status(500).json({ error: safeError(e) });
     }
