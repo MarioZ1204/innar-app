@@ -18,7 +18,23 @@ const { tipoEstudioElectro } = require('./electro-estudio-tipo');
 const RECIBO_CAMPOS = 'r.id, r.numero, r.turno_id, r.cita_electro_id, r.total, r.anulado, r.anulado_razon, r.estado_pago, r.observaciones, r.tipo_servicio, r.fecha, r.cliente, r.medico_nombre, r.nombre_entidad, r.data';
 const SQL_EXCLUIR_MEDICO_ELECTRO = `(medico_nombre IS NULL OR TRIM(medico_nombre) = '' OR UPPER(TRIM(medico_nombre)) NOT LIKE '%ELECTRODIAG%')`;
 const MARGEN_DIAS_FECHA = 7;
+const DOC_MIN_LEN = 4;
 const CATALOGOS_TTL_MS = 5 * 60 * 1000;
+
+/** Solo dígitos en SQL (MariaDB/MySQL 8). Fallback portable si falla en runtime. */
+function sqlSoloDigitos(expr) {
+  return `REGEXP_REPLACE(COALESCE(${expr}, ''), '[^0-9]', '')`;
+}
+
+function sqlCondDocumentoEnLista(expr, documentos) {
+  const docs = (documentos || []).filter((d) => String(d).length >= DOC_MIN_LEN).slice(0, 80);
+  if (!docs.length) return null;
+  const dig = sqlSoloDigitos(expr);
+  return {
+    sql: `(${docs.map(() => `${dig} = ?`).join(' OR ')})`,
+    params: docs
+  };
+}
 
 const SQL_FILTRO_RECIBO_ELECTRO = `(
   UPPER(COALESCE(r.medico_nombre, '')) LIKE '%ELECTRODIAG%'
@@ -198,15 +214,18 @@ function clienteCoincidePaciente(cliente, pacienteNombre, estricto = false) {
 
 function extraerDocumentoRecibo(rec) {
   if (!rec) return '';
-  const fromJoin = normDocumento(rec.turno_documento || rec.electro_documento || '');
-  if (fromJoin) return fromJoin;
+  let fromData = '';
   if (rec.data) {
     try {
       const parsed = typeof rec.data === 'string' ? JSON.parse(rec.data) : rec.data;
-      return normDocumento(parsed?.doc);
+      fromData = normDocumento(parsed?.doc);
     } catch (_) { /* ignore */ }
   }
-  return '';
+  // Priorizar el documento digitado en el recibo (data.doc); el JOIN puede venir de otro turno.
+  if (fromData.length >= DOC_MIN_LEN) return fromData;
+  const fromJoin = normDocumento(rec.turno_documento || rec.electro_documento || '');
+  if (fromJoin.length >= DOC_MIN_LEN) return fromJoin;
+  return fromData || fromJoin || '';
 }
 
 function entidadCoincide(rec, cita) {
@@ -226,9 +245,37 @@ function pacienteReciboCoincideCita(rec, cita, estrictoNombre = true, opciones =
   const docRec = extraerDocumentoRecibo(rec);
   const docCita = normDocumento(cita?.paciente_documento);
   if (docRec && docCita) return docRec === docCita;
-  if (docRec && !docCita) return false;
+  // Sin documento en la cita: permitir fallback por nombre (recibo sí puede traer doc).
+  if (docRec && !docCita) {
+    return clienteCoincidePaciente(rec?.cliente, cita?.paciente_nombre, estrictoNombre);
+  }
   if (!docRec && docCita && opciones.enlaceDirecto === true) return true;
   return clienteCoincidePaciente(rec?.cliente, cita?.paciente_nombre, estrictoNombre);
+}
+
+/**
+ * Vinculación fuerte por número de documento (prioridad en auditoría).
+ * No exige coincidencia de tipo de servicio: el documento es la clave.
+ */
+function reciboCoincidePorDocumento(rec, cita, catalogos = {}, tipoCita = 'AGENDA_MEDICA') {
+  const docRec = extraerDocumentoRecibo(rec);
+  const docCita = normDocumento(cita?.paciente_documento);
+  if (!docRec || !docCita || docRec.length < DOC_MIN_LEN || docRec !== docCita) return false;
+
+  const esMedica = tipoCita === 'AGENDA_MEDICA';
+  if (esMedica) {
+    if (esReciboElectro(rec, catalogos)) return false;
+    if (rec.turno_id != null && rec.turno_id !== '' && Number(rec.turno_id) !== 0
+      && Number(rec.turno_id) !== Number(cita.id)) return false;
+  } else {
+    if (rec.cita_electro_id != null && rec.cita_electro_id !== '' && Number(rec.cita_electro_id) !== 0
+      && Number(rec.cita_electro_id) !== Number(cita.id)) return false;
+    if (rec.turno_id != null && rec.turno_id !== '' && Number(rec.turno_id) !== 0) return false;
+  }
+
+  if (!fechasCitaReciboCercanas(extraerFechaYmd(rec.fecha), extraerFechaYmd(cita.fecha))) return false;
+  if (!entidadCoincide(rec, cita)) return false;
+  return true;
 }
 
 function esMedicoElectroDiagnostico(medicoNombre) {
@@ -345,9 +392,11 @@ async function cargarRecibosConsultaMedica(db, citasMedicas) {
   if (!citasMedicas.length) return [];
 
   const turnoIds = citasMedicas.map((c) => c.id);
-  const fechasSql = sqlInFechasCitas(citasMedicas);
   const rango = calcularRangoMargen(citasMedicas);
   const phTurnos = turnoIds.map(() => '?').join(',');
+  const documentos = [...new Set(
+    citasMedicas.map((c) => normDocumento(c.paciente_documento)).filter((d) => d.length >= DOC_MIN_LEN)
+  )];
 
   const queries = [
     db.query(
@@ -359,23 +408,32 @@ async function cargarRecibosConsultaMedica(db, citasMedicas) {
     )
   ];
 
-  if (fechasSql) {
+  // Pool amplio ±7 días (antes solo fecha exacta): el match por documento se resuelve en memoria.
+  if (rango) {
     queries.push(db.query(
       `SELECT ${RECIBO_CAMPOS}, t.paciente_documento AS turno_documento
        FROM recibos r
        LEFT JOIN turnos t ON t.id = r.turno_id
        WHERE (r.cita_electro_id IS NULL OR r.cita_electro_id = 0)
          AND ${SQL_EXCLUIR_MEDICO_ELECTRO.replace(/medico_nombre/g, 'r.medico_nombre')}
-         AND DATE(r.fecha) IN (${fechasSql.ph})`,
-      fechasSql.fechas
-    ));
+         AND DATE(r.fecha) BETWEEN ? AND ?`,
+      [rango.desde, rango.hasta]
+    ).catch(() => []));
   }
 
-  const documentos = [...new Set(citasMedicas.map((c) => normDocumento(c.paciente_documento)).filter((d) => d.length >= 5))];
-  if (documentos.length && rango) {
-    const docConds = documentos.slice(0, 80).map(() =>
-      `REPLACE(REPLACE(REPLACE(REPLACE(JSON_UNQUOTE(JSON_EXTRACT(r.data, '$.doc')), '.', ''), '-', ''), ' ', ''), '/', '') = ?`
-    ).join(' OR ');
+  const docData = sqlCondDocumentoEnLista(`JSON_UNQUOTE(JSON_EXTRACT(r.data, '$.doc'))`, documentos);
+  const docTurno = sqlCondDocumentoEnLista('t.paciente_documento', documentos);
+  if (documentos.length && rango && (docData || docTurno)) {
+    const parts = [];
+    const params = [rango.desde, rango.hasta];
+    if (docData) {
+      parts.push(docData.sql);
+      params.push(...docData.params);
+    }
+    if (docTurno) {
+      parts.push(docTurno.sql);
+      params.push(...docTurno.params);
+    }
     queries.push(
       db.query(
         `SELECT ${RECIBO_CAMPOS}, t.paciente_documento AS turno_documento
@@ -384,8 +442,8 @@ async function cargarRecibosConsultaMedica(db, citasMedicas) {
          WHERE (r.cita_electro_id IS NULL OR r.cita_electro_id = 0)
            AND ${SQL_EXCLUIR_MEDICO_ELECTRO.replace(/medico_nombre/g, 'r.medico_nombre')}
            AND DATE(r.fecha) BETWEEN ? AND ?
-           AND (${docConds})`,
-        [rango.desde, rango.hasta, ...documentos.slice(0, 80)]
+           AND (${parts.join(' OR ')})`,
+        params
       ).catch(() => [])
     );
   }
@@ -400,6 +458,9 @@ async function cargarRecibosElectro(db, citasElectro) {
   const electroIds = citasElectro.map((c) => c.id);
   const rango = calcularRangoMargen(citasElectro);
   const phElectro = electroIds.map(() => '?').join(',');
+  const documentos = [...new Set(
+    citasElectro.map((c) => normDocumento(c.paciente_documento)).filter((d) => d.length >= DOC_MIN_LEN)
+  )];
 
   const queries = [
     db.query(
@@ -414,8 +475,10 @@ async function cargarRecibosElectro(db, citasElectro) {
 
   if (rango) {
     queries.push(db.query(
-      `SELECT ${RECIBO_CAMPOS}
+      `SELECT ${RECIBO_CAMPOS}, p.documento AS electro_documento
        FROM recibos r
+       LEFT JOIN citas_electro ce ON ce.id = r.cita_electro_id
+       LEFT JOIN pacientes p ON p.id = ce.paciente_id
        WHERE (r.cita_electro_id IS NULL OR r.cita_electro_id = 0)
          AND DATE(r.fecha) BETWEEN ? AND ?
          AND ${SQL_FILTRO_RECIBO_ELECTRO}`,
@@ -423,19 +486,29 @@ async function cargarRecibosElectro(db, citasElectro) {
     ));
   }
 
-  const documentos = [...new Set(citasElectro.map((c) => normDocumento(c.paciente_documento)).filter((d) => d.length >= 5))];
-  if (documentos.length && rango) {
-    const docConds = documentos.slice(0, 80).map(() =>
-      `REPLACE(REPLACE(REPLACE(REPLACE(JSON_UNQUOTE(JSON_EXTRACT(r.data, '$.doc')), '.', ''), '-', ''), ' ', ''), '/', '') = ?`
-    ).join(' OR ');
+  const docData = sqlCondDocumentoEnLista(`JSON_UNQUOTE(JSON_EXTRACT(r.data, '$.doc'))`, documentos);
+  const docPac = sqlCondDocumentoEnLista('p.documento', documentos);
+  if (documentos.length && rango && (docData || docPac)) {
+    const parts = [];
+    const params = [rango.desde, rango.hasta];
+    if (docData) {
+      parts.push(docData.sql);
+      params.push(...docData.params);
+    }
+    if (docPac) {
+      parts.push(docPac.sql);
+      params.push(...docPac.params);
+    }
     queries.push(
       db.query(
-        `SELECT ${RECIBO_CAMPOS}
+        `SELECT ${RECIBO_CAMPOS}, p.documento AS electro_documento
          FROM recibos r
+         LEFT JOIN citas_electro ce ON ce.id = r.cita_electro_id
+         LEFT JOIN pacientes p ON p.id = ce.paciente_id
          WHERE (r.cita_electro_id IS NULL OR r.cita_electro_id = 0)
            AND DATE(r.fecha) BETWEEN ? AND ?
-           AND (${docConds})`,
-        [rango.desde, rango.hasta, ...documentos.slice(0, 80)]
+           AND (${parts.join(' OR ')})`,
+        params
       ).catch(() => [])
     );
   }
@@ -467,7 +540,7 @@ function crearIndiceRecibos(recibos) {
       porFecha.get(f).push(r);
     }
     const doc = extraerDocumentoRecibo(r);
-    if (doc.length >= 5) {
+    if (doc.length >= DOC_MIN_LEN) {
       if (!porDocumento.has(doc)) porDocumento.set(doc, []);
       porDocumento.get(doc).push(r);
     }
@@ -502,6 +575,7 @@ function mapearRecibosPorCita(citas, recibos, catalogos, tipoCita) {
   const indice = crearIndiceRecibos(recibos);
   const coincideFn = esMedica ? reciboCoincideCitaMedica : reciboCoincideCitaElectro;
 
+  // 1) Enlace directo por FK turno / cita electro
   for (const c of citas) {
     const directos = esMedica
       ? (indice.porTurnoId.get(Number(c.id)) || [])
@@ -515,17 +589,19 @@ function mapearRecibosPorCita(citas, recibos, catalogos, tipoCita) {
     }
   }
 
+  // 2) Por número de documento (clave principal cuando no hay FK)
   for (const c of citas) {
     const doc = normDocumento(c.paciente_documento);
-    if (doc.length < 5) continue;
+    if (doc.length < DOC_MIN_LEN) continue;
     for (const r of indice.porDocumento.get(doc) || []) {
       if (usados.has(r.id)) continue;
-      if (!coincideFn(r, c, catalogos)) continue;
+      if (!reciboCoincidePorDocumento(r, c, catalogos, tipoCita)) continue;
       porCita.get(c.id).push(r);
       usados.add(r.id);
     }
   }
 
+  // 3) Fallback heurístico (nombre + tipo + fecha ±7)
   for (const c of citas) {
     for (const r of candidatosPorFecha(c, indice)) {
       if (usados.has(r.id)) continue;
@@ -560,6 +636,7 @@ async function prepararVinculoRecibos(db, citas) {
 
 module.exports = {
   MARGEN_DIAS_FECHA,
+  DOC_MIN_LEN,
   resetCatalogosCacheForTests,
   extraerFechaYmd,
   normDocumento,
@@ -571,6 +648,7 @@ module.exports = {
   esReciboConsultaMedica,
   reciboCoincideCitaMedica,
   reciboCoincideCitaElectro,
+  reciboCoincidePorDocumento,
   reciboEnlazadoPorTurno,
   reciboEnlazadoPorCitaElectro,
   reciboDirectoMedica,

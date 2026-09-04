@@ -8,12 +8,14 @@ const {
   esReciboConsultaMedica,
   reciboCoincideCitaMedica,
   reciboCoincideCitaElectro,
+  reciboCoincidePorDocumento,
   reciboEnlazadoPorTurno,
   reciboEnlazadoPorCitaElectro,
   reciboDirectoMedica,
   extraerDocumentoRecibo,
   pacienteReciboCoincideCita,
-  asignarRecibosACitas
+  asignarRecibosACitas,
+  mapearRecibosPorCita
 } = require('../utils/citas-auditoria');
 
 const CATALOGOS_AUDITORIA = {
@@ -278,6 +280,40 @@ describe('recibos consulta médica en auditoría', () => {
       { data: JSON.stringify({ doc: '1234567890' }) },
       { paciente_documento: '1234567890' }
     )).toBe(true);
+  });
+
+  test('normaliza documento con prefijo CC y puntos', () => {
+    expect(extraerDocumentoRecibo({ data: JSON.stringify({ doc: 'CC12.345.678' }) })).toBe('12345678');
+    expect(pacienteReciboCoincideCita(
+      { data: JSON.stringify({ doc: 'CC 12.345.678' }) },
+      { paciente_documento: '12345678' }
+    )).toBe(true);
+  });
+
+  test('prioriza data.doc sobre turno_documento del JOIN conflictivo', () => {
+    const rec = {
+      data: JSON.stringify({ doc: '1234567890' }),
+      turno_documento: '9999999999'
+    };
+    expect(extraerDocumentoRecibo(rec)).toBe('1234567890');
+  });
+
+  test('vincula por documento aunque el tipo de servicio no coincida', () => {
+    const rec = {
+      id: 30,
+      turno_id: null,
+      cita_electro_id: null,
+      tipo_servicio: 'Cardiología',
+      fecha: '2026-06-15',
+      cliente: 'Otro Nombre',
+      data: JSON.stringify({ doc: '1234567890' }),
+      nombre_entidad: 'FIDUPREVISORA'
+    };
+    expect(reciboCoincideCitaMedica(rec, citaMedica, CATALOGOS_AUDITORIA)).toBe(false);
+    expect(reciboCoincidePorDocumento(rec, citaMedica, CATALOGOS_AUDITORIA, 'AGENDA_MEDICA')).toBe(true);
+    const mapa = mapearRecibosPorCita([citaMedica], [rec], CATALOGOS_AUDITORIA, 'AGENDA_MEDICA');
+    expect(mapa.get(citaMedica.id)).toHaveLength(1);
+    expect(mapa.get(citaMedica.id)[0].id).toBe(30);
   });
 
   test('fallback tolera fecha cercana pero no cambio de tipo', () => {

@@ -245,9 +245,19 @@ async function buildRecibosFilter(query) {
   if (anulado === 'si') { conditions.push('anulado = 1'); }
   else if (anulado === 'no') { conditions.push('(anulado = 0 OR anulado IS NULL)'); }
   if (q) {
-    conditions.push('(cliente LIKE ? OR numero LIKE ? OR observaciones LIKE ? OR medico_nombre LIKE ? OR nombre_entidad LIKE ? OR tipo_servicio LIKE ? OR generado_por_nombre LIKE ?)');
     const like = `%${q}%`;
-    params.push(like, like, like, like, like, like, like);
+    const docExpr = `JSON_UNQUOTE(JSON_EXTRACT(data, '$.doc'))`;
+    const digQ = String(q).replace(/\D/g, '');
+    // Incluye documento del paciente (data.doc), también normalizado a dígitos.
+    let sql = `(cliente LIKE ? OR numero LIKE ? OR observaciones LIKE ? OR medico_nombre LIKE ? OR nombre_entidad LIKE ? OR tipo_servicio LIKE ? OR generado_por_nombre LIKE ? OR ${docExpr} LIKE ?`;
+    const qParams = [like, like, like, like, like, like, like, like];
+    if (digQ.length >= 4) {
+      sql += ` OR ${sqlDigitsExpr(docExpr)} LIKE ?`;
+      qParams.push(`%${digQ}%`);
+    }
+    sql += ')';
+    conditions.push(sql);
+    params.push(...qParams);
   }
   return { where: conditions.length ? 'WHERE ' + conditions.join(' AND ') : '', params };
 }
