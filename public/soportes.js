@@ -6733,11 +6733,13 @@
         <div class="sop-import-origen-opts">
           <label class="sop-import-origen-opt">
             <input type="radio" name="sopImpOrigen" value="cargar" checked>
-            Buscar desde Reportes (Cargar reportes)
+            <span class="sop-import-origen-title">Cargar reportes</span>
+            <span class="sop-import-origen-sub">Reportes activos</span>
           </label>
           ${puedeHistorico ? `<label class="sop-import-origen-opt">
             <input type="radio" name="sopImpOrigen" value="anteriores">
-            Buscar desde Reportes Anteriores
+            <span class="sop-import-origen-title">Reportes anteriores</span>
+            <span class="sop-import-origen-sub">Archivo histórico</span>
           </label>` : ''}
         </div>
       </div>`;

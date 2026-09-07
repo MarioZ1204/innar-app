@@ -1766,7 +1766,7 @@ body.sop-arm-drag-active {
   color: #166534;
 }
 
-/* Importar PDX — resultados en modal */
+/* Importar PDX — origen (segmentado simétrico) */
 .sop-import-origen {
   display: flex;
   flex-direction: column;
@@ -1781,42 +1781,80 @@ body.sop-arm-drag-active {
 }
 
 .sop-import-origen-opts {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-
-.sop-import-origen-opt {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  margin: 0;
-  padding: 8px 12px;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0;
+  width: 100%;
   border: 1px solid #e2e8f0;
   border-radius: 10px;
-  background: #fff;
-  font-size: 0.8rem;
-  color: #334155;
-  cursor: pointer;
-  user-select: none;
-  transition: border-color 0.12s, background 0.12s, box-shadow 0.12s;
-}
-
-.sop-import-origen-opt:hover {
-  border-color: #cbd5e1;
+  overflow: hidden;
   background: #f8fafc;
 }
 
+.sop-import-origen-opts:has(.sop-import-origen-opt:only-child) {
+  grid-template-columns: 1fr;
+}
+
+.sop-import-origen-opt {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  margin: 0;
+  min-height: 56px;
+  padding: 10px 12px;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  font-size: 0.8rem;
+  line-height: 1.25;
+  color: #475569;
+  text-align: center;
+  cursor: pointer;
+  user-select: none;
+  transition: background 0.12s, color 0.12s, box-shadow 0.12s;
+}
+
+.sop-import-origen-opt + .sop-import-origen-opt {
+  border-left: 1px solid #e2e8f0;
+}
+
+.sop-import-origen-opt:hover {
+  background: #fff;
+  color: #334155;
+}
+
 .sop-import-origen-opt:has(input:checked) {
-  border-color: var(--innar-accent, #0ea5e9);
-  background: var(--innar-accent-soft, #e0f2fe);
-  box-shadow: 0 0 0 1px var(--innar-accent, #0ea5e9);
+  background: #fff;
+  color: #0f172a;
   font-weight: 600;
+  box-shadow: inset 0 0 0 2px var(--innar-accent, #0ea5e9);
+  z-index: 1;
 }
 
 .sop-import-origen-opt input {
-  margin: 0;
-  accent-color: var(--innar-accent, #0ea5e9);
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.sop-import-origen-title {
+  display: block;
+  font-size: 0.82rem;
+  font-weight: inherit;
+}
+
+.sop-import-origen-sub {
+  display: block;
+  font-size: 0.7rem;
+  font-weight: 500;
+  color: #64748b;
+}
+
+.sop-import-origen-opt:has(input:checked) .sop-import-origen-sub {
+  color: #0369a1;
 }
 
 .sop-import-results {
