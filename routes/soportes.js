@@ -125,7 +125,13 @@ const { resolveArchivoAbsoluto, resolverArchivoExpedienteRow } = require('../uti
 const { runSoportesRecoveryScript } = require('../utils/soportes-recovery-runner');
 const { syncRipsCarpetasDia, syncRipsCarpetasContenedor } = require('../utils/soportes-rips-carpetas-sync');
 const { zipArchiveSegment } = require('../utils/soportes-armado-zip');
-const { createZipJob, createZipJobWithCache, createPeriodPaqueteJob, getJob: getSopZipJob } = require('../utils/soportes-zip-jobs');
+const {
+  createZipJob,
+  createZipJobWithCache,
+  createPeriodPaqueteJob,
+  cancelZipJob: cancelSopZipJob,
+  getJob: getSopZipJob
+} = require('../utils/soportes-zip-jobs');
 const {
   SOPORTES_ROOT,
   getPdxDir,
@@ -4284,6 +4290,22 @@ router.get('/soportes/armado/zip/job/:jobId/descargar', requireAuth, requireRole
   } catch (e) {
     logger.error('[SOPORTES] zip job download:', e);
     if (!res.headersSent) res.status(500).json({ error: safeError(e) });
+  }
+});
+
+router.post('/soportes/armado/zip/job/:jobId/cancelar', requireAuth, requireRoleOrPerm(ROLES_SOPORTES, 'soportes.descargar_zip'), (req, res) => {
+  try {
+    const r = cancelSopZipJob(req.params.jobId);
+    if (!r.ok && r.reason === 'not_found') {
+      return res.status(404).json({ error: 'Trabajo no encontrado o expirado' });
+    }
+    if (!r.ok) {
+      return res.status(409).json({ error: 'El ZIP ya finalizó', status: r.status || null });
+    }
+    res.json({ ok: true, job_id: req.params.jobId, status: 'cancelled', message: 'Descarga cancelada' });
+  } catch (e) {
+    logger.error('[SOPORTES] zip job cancelar:', e);
+    res.status(500).json({ error: safeError(e) });
   }
 });
 

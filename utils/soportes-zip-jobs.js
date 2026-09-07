@@ -91,18 +91,81 @@ function applyProgress(job, patch) {
   if (patch.progress != null) job.progress = patch.progress;
 }
 
+/** Un job libera su cupo una sola vez: cancelar y terminar pueden coincidir. */
+function releaseJobSlot(job) {
+  if (!job || job.slotLibre) return;
+  job.slotLibre = true;
+  finishZipJobSlot();
+}
+
 function markJobFinished(job, patch) {
   if (!job || job.status !== 'running') return false;
   Object.assign(job, patch);
   job.childProcess = null;
-  finishZipJobSlot();
+  job.worker = null;
+  releaseJobSlot(job);
   return true;
+}
+
+function borrarArchivoParcial(job) {
+  const parcial = job.filePath || path.join(getSopZipWorkDir(), `${job.id}.zip`);
+  if (job.fromCache) return;
+  fs.promises.rm(parcial, { force: true }).catch(() => { /* ignore */ });
+}
+
+/**
+ * Cancela un ZIP en cola o en curso. Matar el worker es la única forma de parar
+ * de verdad: archiver no admite abortar desde fuera del proceso hijo.
+ */
+function cancelZipJob(jobId) {
+  const job = jobs.get(jobId);
+  if (!job) return { ok: false, reason: 'not_found' };
+  if (job.status === 'cancelled') return { ok: true, status: 'cancelled' };
+  if (job.status === 'error') return { ok: false, reason: 'finalizado', status: job.status };
+
+  const previo = job.status;
+  const enCola = pendingQueue.indexOf(job);
+  if (enCola >= 0) pendingQueue.splice(enCola, 1);
+
+  // 'pending' y 'running' son los únicos estados que ocupan un cupo de concurrencia.
+  const ocupabaCupo = previo === 'pending' || previo === 'running';
+  const w = job.worker;
+
+  job.status = 'cancelled';
+  job.progress = 0;
+  job.message = 'Descarga cancelada';
+  job.error = null;
+  job.cancelled = true;
+
+  if (w) {
+    w.job = null;
+    w.dead = true;
+    removeFromIdle(w);
+    shutdownWorker(w);
+  }
+  job.childProcess = null;
+  job.worker = null;
+
+  borrarArchivoParcial(job);
+  job.filePath = null;
+
+  if (ocupabaCupo) releaseJobSlot(job);
+  else {
+    job.slotLibre = true;
+    drainZipJobQueue();
+  }
+
+  return { ok: true, status: 'cancelled', previo };
 }
 
 function runZipJobInline(job) {
   job.status = 'running';
   return runZipJobToDisk(job, (patch) => applyProgress(job, patch))
     .then(async (result) => {
+    if (job.status === 'cancelled') {
+      await fs.promises.rm(result.filePath, { force: true }).catch(() => {});
+      return;
+    }
     job.status = 'ready';
     job.progress = 100;
     job.message = 'Listo para descargar';
@@ -112,6 +175,7 @@ function runZipJobInline(job) {
       }
     })
     .catch((e) => {
+    if (job.status === 'cancelled') return;
     job.status = 'error';
     job.error = e.message || 'Error al generar ZIP';
     job.progress = 0;
@@ -120,7 +184,7 @@ function runZipJobInline(job) {
     }
     job.filePath = null;
     })
-    .finally(() => finishZipJobSlot());
+    .finally(() => releaseJobSlot(job));
 }
 
 const idleWorkers = [];
@@ -249,6 +313,7 @@ function acquireWorker() {
 }
 
 function runZipJobInChildProcess(job) {
+  if (job.status === 'cancelled') return;
   job.status = 'running';
   job.message = 'Generando ZIP…';
 
@@ -259,12 +324,13 @@ function runZipJobInChildProcess(job) {
     logger.error('[SOPORTES] zip fork:', e.message);
     job.status = 'error';
     job.error = 'No se pudo iniciar el proceso ZIP';
-    finishZipJobSlot();
+    releaseJobSlot(job);
     return;
   }
 
   w.job = job;
   job.childProcess = w.child;
+  job.worker = w;
 
   try {
     w.child.send({ type: 'run', job: serializeJobForWorker(job) });
@@ -287,6 +353,7 @@ function startZipJob(job) {
 function drainZipJobQueue() {
   while (runningZipJobs < MAX_CONCURRENT_ZIP_JOBS && pendingQueue.length) {
     const job = pendingQueue.shift();
+    if (job.status === 'cancelled') continue;
     job.status = 'pending';
     job.message = 'Iniciando generación…';
     runningZipJobs += 1;
@@ -326,6 +393,9 @@ function createZipJob(spec, usuarioId = null) {
     emptyError: spec.emptyError || null,
     createdAt: Date.now(),
     childProcess: null,
+    worker: null,
+    slotLibre: false,
+    cancelled: false,
     fromCache: false
   };
   jobs.set(id, job);
@@ -365,6 +435,9 @@ async function createZipJobWithCache(spec, usuarioId = null) {
       emptyError: spec.emptyError || null,
       createdAt: Date.now(),
       childProcess: null,
+      worker: null,
+      slotLibre: true,
+      cancelled: false,
       fromCache: true
     };
     jobs.set(id, job);
@@ -391,6 +464,7 @@ module.exports = {
   createZipJob,
   createZipJobWithCache,
   createPeriodPaqueteJob,
+  cancelZipJob,
   getJob,
   JOB_TTL_MS,
   MAX_CONCURRENT_ZIP_JOBS,

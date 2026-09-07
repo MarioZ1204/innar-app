@@ -1468,20 +1468,27 @@
       const pct = Math.max(0, Math.min(100, j.progress || 0));
       const err = j.status === 'error';
       const done = j.status === 'downloaded';
+      const cancelado = j.status === 'cancelled';
       const queued = j.status === 'queued' || j.status === 'pending';
       const running = j.status === 'running' || j.status === 'starting';
       const canDl = Boolean(j.apiJobId) && (j.canDownload || j.status === 'ready' || done);
       const dlBtn = canDl
         ? `<button type="button" class="sop-btn sop-btn-teal sop-btn-sm sop-zip-job-dl" data-zip-local="${escapeHtml(localId)}">Descargar</button>`
         : '';
-      return `<li class="sop-zip-job-item${err ? ' is-error' : ''}${done ? ' is-done' : ''}${queued ? ' is-queued' : ''}${running ? ' is-running' : ''}" data-zip-local="${escapeHtml(localId)}">
+      // Solo se puede cancelar mientras el servidor sigue generando.
+      const canCancel = !err && !done && !cancelado && j.status !== 'ready';
+      const cancelBtn = canCancel
+        ? `<button type="button" class="sop-btn sop-btn-ghost sop-btn-sm sop-zip-job-cancel" data-zip-local="${escapeHtml(localId)}">Cancelar</button>`
+        : '';
+      const acciones = `${dlBtn}${cancelBtn}`;
+      return `<li class="sop-zip-job-item${err ? ' is-error' : ''}${done ? ' is-done' : ''}${cancelado ? ' is-cancelled' : ''}${queued ? ' is-queued' : ''}${running ? ' is-running' : ''}" data-zip-local="${escapeHtml(localId)}">
         <div class="sop-zip-job-row">
           <span class="sop-zip-job-name">${escapeHtml(j.label || j.filename || 'ZIP')}</span>
           <span class="sop-zip-job-pct">${pct}%</span>
         </div>
         <div class="sop-zip-job-bar-wrap" aria-hidden="true"><div class="sop-zip-job-bar" style="width:${pct}%"></div></div>
         <div class="sop-zip-job-status">${escapeHtml(j.message || '')}</div>
-        ${dlBtn ? `<div class="sop-zip-job-actions">${dlBtn}</div>` : ''}
+        ${acciones ? `<div class="sop-zip-job-actions">${acciones}</div>` : ''}
       </li>`;
     }).join('');
     if (typeof sopIcons === 'function') sopIcons(panel);
@@ -1497,11 +1504,55 @@
     iniciarDescargaArchivoEnlace(url, j.filename || j.label);
   }
 
+  /**
+   * Cancela en el servidor (mata el proceso que comprime) y retira la tarjeta.
+   * Si el job aún no tiene id, se marca para cancelarlo al recibirlo.
+   */
+  async function sopZipBgCancelar(localId) {
+    const j = sopZipBg.jobs.get(localId);
+    if (!j) return;
+    sopZipBgStopPoll(localId);
+    j.status = 'cancelled';
+    j.progress = 0;
+    j.message = 'Cancelando…';
+    sopZipBgRender();
+
+    if (!j.apiJobId) {
+      j.cancelPendiente = true;
+      j.message = 'Descarga cancelada';
+      sopZipBgRender();
+      sopToast('Descarga cancelada', 'info');
+      sopZipBgRemoveLater(localId, 4000);
+      return;
+    }
+
+    try {
+      const res = await apiFetch(`/api/soportes/armado/zip/job/${j.apiJobId}/cancelar`, { method: 'POST' });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok && res.status !== 409 && res.status !== 404) {
+        throw new Error(data.error || 'No se pudo cancelar');
+      }
+      j.message = 'Descarga cancelada';
+      sopToast('Descarga cancelada', 'info');
+    } catch (e) {
+      j.message = e.message || 'No se pudo cancelar';
+      sopToast(j.message, 'error');
+    }
+    sopZipBgRender();
+    sopZipBgRemoveLater(localId, 4000);
+  }
+
   function sopZipBgBindActions() {
     const panel = sopZipBg.panel;
     if (!panel || panel._zipActionsBound) return;
     panel._zipActionsBound = true;
     panel.addEventListener('click', (ev) => {
+      const cancelar = ev.target.closest('.sop-zip-job-cancel');
+      if (cancelar) {
+        cancelar.disabled = true;
+        void sopZipBgCancelar(cancelar.dataset.zipLocal);
+        return;
+      }
       const btn = ev.target.closest('.sop-zip-job-dl');
       if (!btn) return;
       const localId = btn.dataset.zipLocal;
@@ -1557,6 +1608,7 @@
   async function sopZipBgPollOnce(localId) {
     const j = sopZipBg.jobs.get(localId);
     if (!j?.apiJobId) return;
+    if (j.status === 'cancelled') return;
     try {
       const stRes = await apiFetch(`/api/soportes/armado/zip/job/${j.apiJobId}`);
       const st = await stRes.json().catch(() => ({}));
@@ -1586,6 +1638,12 @@
           sopToast(e.message || 'No se pudo descargar el ZIP', 'error');
           sopZipBgRender();
         }
+      } else if (st.status === 'cancelled') {
+        sopZipBgStopPoll(localId);
+        j.message = 'Descarga cancelada';
+        j.progress = 0;
+        sopZipBgRender();
+        sopZipBgRemoveLater(localId, 4000);
       } else if (st.status === 'error') {
         sopZipBgStopPoll(localId);
         j.message = st.error || 'Error al generar ZIP';
@@ -1644,6 +1702,12 @@
     const j = sopZipBg.jobs.get(localId);
     if (!j) return;
     j.apiJobId = startData.job_id;
+    // Se canceló mientras arrancaba: recién ahora hay id que cancelar en el servidor.
+    if (j.cancelPendiente) {
+      j.cancelPendiente = false;
+      void apiFetch(`/api/soportes/armado/zip/job/${j.apiJobId}/cancelar`, { method: 'POST' }).catch(() => {});
+      return;
+    }
     j.filename = startData.filename || label;
     j.status = startData.status || 'pending';
     j.message = startData.message || 'Generando en el servidor…';
