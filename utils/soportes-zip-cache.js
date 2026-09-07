@@ -186,6 +186,27 @@ async function tryGetCachedZip(periodoId, kind) {
   return tryGetCachedZipForSpec({ kind, periodoId });
 }
 
+/**
+ * Publica el ZIP en caché sin bloquear el event loop.
+ * Hard link (instantáneo, mismo disco) y solo si falla se copia en streaming.
+ */
+async function publicarZipEnCache(sourceZipPath, zipPath) {
+  if (path.resolve(sourceZipPath) === path.resolve(zipPath)) return;
+  await fs.promises.rm(zipPath, { force: true });
+  try {
+    await fs.promises.link(sourceZipPath, zipPath);
+    return;
+  } catch (_) { /* distinto volumen o FS sin hard links */ }
+  const tmp = `${zipPath}.tmp-${process.pid}`;
+  try {
+    await fs.promises.copyFile(sourceZipPath, tmp);
+    await fs.promises.rename(tmp, zipPath);
+  } catch (e) {
+    await fs.promises.rm(tmp, { force: true }).catch(() => {});
+    throw e;
+  }
+}
+
 async function saveToCacheForSpec(spec, sourceZipPath, filename) {
   const cacheId = jobCacheId(spec);
   if (!cacheId || !sourceZipPath) return;
@@ -193,11 +214,9 @@ async function saveToCacheForSpec(spec, sourceZipPath, filename) {
 
   const { zipPath, manifestPath } = cachePaths(cacheId);
   try {
-    if (path.resolve(sourceZipPath) !== path.resolve(zipPath)) {
-      fs.copyFileSync(sourceZipPath, zipPath);
-    }
+    await publicarZipEnCache(sourceZipPath, zipPath);
     const fp = await computeJobFingerprint(spec);
-    fs.writeFileSync(manifestPath, JSON.stringify({
+    await fs.promises.writeFile(manifestPath, JSON.stringify({
       cacheId,
       kind: spec.kind,
       fingerprint: fingerprintKey(fp),

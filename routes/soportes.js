@@ -421,19 +421,15 @@ function streamZipJobDownload(res, job) {
       progress: job.progress
     });
   }
-  let size = 0;
-  try {
-    size = fs.statSync(job.filePath).size;
-  } catch (_) { /* ignore */ }
+  // res.download admite Range: el navegador transmite a disco y puede reanudar.
   res.setHeader('Content-Type', 'application/zip');
-  res.setHeader('Content-Disposition', `attachment; filename="${job.filename}"`);
-  res.setHeader('Cache-Control', 'no-store');
-  if (size > 0) res.setHeader('Content-Length', String(size));
-  const stream = fs.createReadStream(job.filePath);
-  stream.on('error', () => {
-    if (!res.headersSent) res.status(500).json({ error: 'Error al leer el ZIP generado' });
+  res.setHeader('Cache-Control', 'private, max-age=0, must-revalidate');
+  res.download(job.filePath, job.filename, { acceptRanges: true }, (err) => {
+    if (!err) return;
+    if (res.headersSent) return;
+    logger.warn('[SOPORTES] zip job download:', err.message);
+    res.status(500).json({ error: 'Error al leer el ZIP generado' });
   });
-  stream.pipe(res);
   return null;
 }
 
@@ -4305,7 +4301,7 @@ router.post('/soportes/armado/periodos/:id/zip-paquete/job', requireAuth, requir
     if (!periodoId) return res.status(400).json({ error: 'Periodo inválido' });
     const periodoRows = await db.query('SELECT * FROM sop_periodos WHERE id = ?', [periodoId]);
     if (!periodoRows.length) return res.status(404).json({ error: 'Periodo no encontrado' });
-    const job = createPeriodPaqueteJob(periodoRows[0], req.session?.usuarioId || null);
+    const job = await createPeriodPaqueteJob(periodoRows[0], req.session?.usuarioId || null);
     res.json({
       ok: true,
       job_id: job.id,

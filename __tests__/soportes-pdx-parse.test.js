@@ -427,9 +427,34 @@ describe('soportes-pdx-parse — carpeta PSG', () => {
       'García López, Juan Carlos   2026-05-27.pdf',
       { nombre_display: 'PSG CPAP MARZO' }
     );
-    expect(a.ok).toBe(true);
-    expect(a.requiere_correccion).toBe(false);
+    // El nombre no lleva documento y PSG lo exige: se pide solo ese dato.
+    expect(a.ok).toBe(false);
+    expect(a.motivo).toBe('campos_faltantes');
+    expect(a.parcial.estudio_texto).toBe('PSG CPAP');
     expect(a.parsed.estudio_texto).toBe('PSG CPAP');
+    expect(a.faltantes ?? a.campos.filter((c) => c.requerido && !c.detectado))
+      .toEqual([expect.objectContaining({ key: 'paciente_documento' })]);
+    const detectados = a.campos.filter((c) => c.detectado).map((c) => c.key);
+    expect(detectados).toEqual(
+      expect.arrayContaining(['apellidos', 'nombres', 'fecha_estudio', 'estudio_texto'])
+    );
+  });
+
+  test('analizar acepta PSG cuando el documento se aporta a mano', () => {
+    const meta = buildMetaDesdeCamposManuales(
+      'García López, Juan Carlos   2026-05-27.pdf',
+      {
+        confirmacion_manual: '1',
+        apellidos: 'García López',
+        nombres: 'Juan Carlos',
+        fecha_estudio: '2026-05-27',
+        paciente_documento: '1098765432'
+      },
+      { nombre_display: 'PSG CPAP MARZO' }
+    );
+    expect(meta.ok).toBe(true);
+    expect(meta.estudio_texto).toBe('PSG CPAP');
+    expect(meta.paciente_documento).toBe('1098765432');
   });
 });
 
@@ -441,7 +466,7 @@ describe('soportes-pdx-parse — corrección manual', () => {
     expect(estudioPsgReconocido('')).toBe(false);
   });
 
-  test('buildMetaDesdeCamposManuales con confirmación PSG sin documento', () => {
+  test('buildMetaDesdeCamposManuales rechaza PSG sin documento', () => {
     const meta = buildMetaDesdeCamposManuales(
       'informe.pdf',
       {
@@ -452,9 +477,26 @@ describe('soportes-pdx-parse — corrección manual', () => {
       },
       { nombre_display: 'PSG MARZO' }
     );
+    expect(meta.ok).toBe(false);
+    expect(meta.error).toMatch(/documento/i);
+  });
+
+  test('buildMetaDesdeCamposManuales con confirmación PSG y documento', () => {
+    const meta = buildMetaDesdeCamposManuales(
+      'informe.pdf',
+      {
+        apellidos: 'García',
+        nombres: 'Juan',
+        fecha_estudio: '2026-05-27',
+        estudio_texto: 'PSG CPAP',
+        paciente_documento: '1098765432'
+      },
+      { nombre_display: 'PSG MARZO' }
+    );
     expect(meta.ok).toBe(true);
     expect(meta.estudio_texto).toBe('PSG CPAP');
-    expect(meta.paciente_documento).toBe('');
+    expect(meta.paciente_documento).toBe('1098765432');
+    expect(meta.tipo_documento).toBe('CC');
     expect(meta.formato).toBe('simple');
   });
 

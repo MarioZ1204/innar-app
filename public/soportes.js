@@ -1487,10 +1487,14 @@
     if (typeof sopIcons === 'function') sopIcons(panel);
   }
 
+  /**
+   * Descarga nativa del navegador: transmite a disco al instante, sin cargar
+   * el ZIP completo en memoria y con el gestor de descargas del navegador.
+   */
   async function descargarZipJobAlServidor(j) {
     if (!j?.apiJobId) throw new Error('ZIP no disponible');
     const url = `/api/soportes/armado/zip/job/${j.apiJobId}/descargar`;
-    await descargarArchivoConProgreso(url, j.filename || j.label, { title: 'Descargando ZIP' });
+    iniciarDescargaArchivoEnlace(url, j.filename || j.label);
   }
 
   function sopZipBgBindActions() {
@@ -1522,12 +1526,24 @@
     });
   }
 
+  const ZIP_POLL_MIN_MS = 400;
+  const ZIP_POLL_MAX_MS = 2500;
+
   function sopZipBgStopPoll(localId) {
     const j = sopZipBg.jobs.get(localId);
     if (j?.pollTimer) {
-      clearInterval(j.pollTimer);
+      clearTimeout(j.pollTimer);
       j.pollTimer = null;
     }
+  }
+
+  /** Sondeo rápido al inicio (ZIP pequeños/caché) con backoff para los largos. */
+  function sopZipBgSchedulePoll(localId) {
+    const j = sopZipBg.jobs.get(localId);
+    if (!j) return;
+    const delay = Math.min(ZIP_POLL_MAX_MS, j.pollDelay || ZIP_POLL_MIN_MS);
+    j.pollDelay = Math.min(ZIP_POLL_MAX_MS, Math.round(delay * 1.4));
+    j.pollTimer = setTimeout(() => { void sopZipBgPollOnce(localId); }, delay);
   }
 
   function sopZipBgRemoveLater(localId, ms = 8000) {
@@ -1559,10 +1575,10 @@
         sopZipBgRender();
         try {
           await descargarZipJobAlServidor(j);
-          j.message = 'Descarga completada — puede seguir trabajando';
+          j.message = 'Descarga iniciada en el navegador — puede seguir trabajando';
           j.status = 'downloaded';
           sopZipBgRender();
-          sopToast(`ZIP descargado: ${j.label || j.filename}`, 'success');
+          sopToast(`ZIP listo: ${j.label || j.filename}`, 'success');
           sopZipBgRemoveLater(localId, 7000);
         } catch (e) {
           j.status = 'ready';
@@ -1576,6 +1592,8 @@
         sopZipBgRender();
         sopToast(j.message, 'error');
         sopZipBgRemoveLater(localId, 12000);
+      } else {
+        sopZipBgSchedulePoll(localId);
       }
     } catch (e) {
       sopZipBgStopPoll(localId);
@@ -1640,7 +1658,7 @@
       return;
     }
 
-    j.pollTimer = setInterval(() => { void sopZipBgPollOnce(localId); }, 1500);
+    j.pollDelay = ZIP_POLL_MIN_MS;
     void sopZipBgPollOnce(localId);
   }
 

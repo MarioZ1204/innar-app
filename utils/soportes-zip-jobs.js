@@ -12,8 +12,10 @@ const { tryGetCachedZipForSpec, saveToCacheForSpec, PERIOD_ZIP_KINDS } = require
 const logger = require('./logger');
 
 const JOB_TTL_MS = 2 * 60 * 60 * 1000;
-const MAX_CONCURRENT_ZIP_JOBS = parseInt(process.env.ZIP_MAX_CONCURRENT || '1', 10) || 1;
+const MAX_CONCURRENT_ZIP_JOBS = parseInt(process.env.ZIP_MAX_CONCURRENT || '2', 10) || 2;
 const USE_CHILD_PROCESS = process.env.ZIP_JOB_INLINE !== '1' && process.env.NODE_ENV !== 'test';
+/** Mantener workers vivos evita pagar fork + initPool (segundos) en cada ZIP. */
+const WORKER_IDLE_TTL_MS = 5 * 60 * 1000;
 
 const jobs = new Map();
 const pendingQueue = [];
@@ -90,7 +92,7 @@ function applyProgress(job, patch) {
 }
 
 function markJobFinished(job, patch) {
-  if (job.status !== 'running') return false;
+  if (!job || job.status !== 'running') return false;
   Object.assign(job, patch);
   job.childProcess = null;
   finishZipJobSlot();
@@ -121,20 +123,138 @@ function runZipJobInline(job) {
     .finally(() => finishZipJobSlot());
 }
 
+const idleWorkers = [];
+
+function shutdownWorker(w) {
+  w.dead = true;
+  try { w.child.send({ type: 'shutdown' }); } catch (_) { /* ignore */ }
+  try { w.child.disconnect(); } catch (_) { /* ignore */ }
+  setTimeout(() => {
+    try { w.child.kill('SIGTERM'); } catch (_) { /* ignore */ }
+  }, 1500).unref?.();
+}
+
+function removeFromIdle(w) {
+  const i = idleWorkers.indexOf(w);
+  if (i >= 0) idleWorkers.splice(i, 1);
+  if (w.idleTimer) {
+    clearTimeout(w.idleTimer);
+    w.idleTimer = null;
+  }
+}
+
+/** Termina el job del worker; devuelve el worker al pool solo si sigue sano. */
+function settleWorkerJob(w, patch, { reusable = true } = {}) {
+  const job = w.job;
+  w.job = null;
+  if (reusable) releaseWorker(w);
+  return markJobFinished(job, patch);
+}
+
+function releaseWorker(w) {
+  if (w.dead || !w.child.connected) return;
+  if (idleWorkers.length >= MAX_CONCURRENT_ZIP_JOBS) {
+    shutdownWorker(w);
+    return;
+  }
+  w.idleTimer = setTimeout(() => {
+    removeFromIdle(w);
+    shutdownWorker(w);
+  }, WORKER_IDLE_TTL_MS);
+  w.idleTimer.unref?.();
+  idleWorkers.push(w);
+}
+
+function onWorkerMessage(w, msg) {
+  if (!msg || typeof msg !== 'object') return;
+  const job = w.job;
+  if (!job) return;
+  if (msg.jobId && msg.jobId !== job.id) return;
+
+  if (msg.type === 'progress') {
+    applyProgress(job, msg);
+    return;
+  }
+  if (msg.type === 'done') {
+    const filePath = msg.filePath || path.join(getSopZipWorkDir(), `${job.id}.zip`);
+    const ok = settleWorkerJob(w, {
+      status: 'ready',
+      progress: 100,
+      message: 'Listo para descargar',
+      filePath
+    });
+    if (ok) void saveToCacheForSpec(cacheSpecFromJob(job), filePath, job.filename);
+    return;
+  }
+  if (msg.type === 'error') {
+    settleWorkerJob(w, {
+      status: 'error',
+      error: msg.error || 'Error al generar ZIP',
+      progress: 0,
+      filePath: null
+    });
+  }
+}
+
+function createWorker() {
+  const child = fork(WORKER_SCRIPT, [], {
+    env: process.env,
+    stdio: ['ignore', 'pipe', 'pipe', 'ipc']
+  });
+  const w = { child, job: null, idleTimer: null, dead: false };
+
+  // Los pipes deben consumirse siempre: el worker vive entre trabajos y si stdout
+  // llena el búfer (~64 KB) se bloquea a mitad de un ZIP sin dar señal alguna.
+  child.stdout?.resume();
+  child.stderr?.on('data', (chunk) => {
+    const msg = String(chunk || '').trim();
+    if (msg) logger.warn('[SOPORTES] zip worker:', msg.slice(0, 500));
+  });
+  child.on('message', (msg) => onWorkerMessage(w, msg));
+  child.on('error', (e) => {
+    logger.error('[SOPORTES] zip child error:', e.message);
+    w.dead = true;
+    removeFromIdle(w);
+    settleWorkerJob(w, {
+      status: 'error',
+      error: e.message || 'Proceso ZIP falló',
+      progress: 0,
+      filePath: null
+    }, { reusable: false });
+  });
+  child.on('exit', (code) => {
+    w.dead = true;
+    removeFromIdle(w);
+    settleWorkerJob(w, {
+      status: 'error',
+      error: code === 0 ? 'Proceso ZIP terminó sin respuesta' : `Proceso ZIP terminó (código ${code})`,
+      progress: 0,
+      filePath: null
+    }, { reusable: false });
+  });
+
+  return w;
+}
+
+function acquireWorker() {
+  while (idleWorkers.length) {
+    const w = idleWorkers.pop();
+    if (w.idleTimer) {
+      clearTimeout(w.idleTimer);
+      w.idleTimer = null;
+    }
+    if (!w.dead && w.child.connected) return w;
+  }
+  return createWorker();
+}
+
 function runZipJobInChildProcess(job) {
   job.status = 'running';
-  job.message = 'Iniciando proceso ZIP…';
+  job.message = 'Generando ZIP…';
 
-  let child;
+  let w;
   try {
-    child = fork(WORKER_SCRIPT, [], {
-      env: process.env,
-      stdio: ['ignore', 'pipe', 'pipe', 'ipc']
-    });
-    child.stderr?.on('data', (chunk) => {
-      const msg = String(chunk || '').trim();
-      if (msg) logger.warn('[SOPORTES] zip worker:', msg.slice(0, 500));
-    });
+    w = acquireWorker();
   } catch (e) {
     logger.error('[SOPORTES] zip fork:', e.message);
     job.status = 'error';
@@ -143,67 +263,19 @@ function runZipJobInChildProcess(job) {
     return;
   }
 
-  job.childProcess = child;
-
-  child.on('message', (msg) => {
-    if (!msg || typeof msg !== 'object') return;
-    if (msg.type === 'progress') {
-      applyProgress(job, msg);
-      return;
-    }
-    if (msg.type === 'done') {
-      const filePath = msg.filePath || path.join(getSopZipWorkDir(), `${job.id}.zip`);
-      const ok = markJobFinished(job, {
-        status: 'ready',
-        progress: 100,
-        message: 'Listo para descargar',
-        filePath
-      });
-      if (ok) {
-        void saveToCacheForSpec(cacheSpecFromJob(job), filePath, job.filename);
-      }
-      if (ok) try { child.disconnect(); } catch (_) { /* ignore */ }
-      return;
-    }
-    if (msg.type === 'error') {
-      markJobFinished(job, {
-        status: 'error',
-        error: msg.error || 'Error al generar ZIP',
-        progress: 0,
-        filePath: null
-      });
-    }
-  });
-
-  child.on('error', (e) => {
-    logger.error('[SOPORTES] zip child error:', e.message);
-    markJobFinished(job, {
-      status: 'error',
-      error: e.message || 'Proceso ZIP falló',
-      progress: 0,
-      filePath: null
-    });
-  });
-
-  child.on('exit', (code) => {
-    if (job.status !== 'running') return;
-    markJobFinished(job, {
-      status: 'error',
-      error: code === 0 ? 'Proceso ZIP terminó sin respuesta' : `Proceso ZIP terminó (código ${code})`,
-      progress: 0,
-      filePath: null
-    });
-  });
+  w.job = job;
+  job.childProcess = w.child;
 
   try {
-    child.send({ type: 'run', job: serializeJobForWorker(job) });
+    w.child.send({ type: 'run', job: serializeJobForWorker(job) });
   } catch (e) {
-    markJobFinished(job, {
+    w.dead = true;
+    settleWorkerJob(w, {
       status: 'error',
       error: 'No se pudo comunicar con el proceso ZIP',
       progress: 0,
       filePath: null
-    });
+    }, { reusable: false });
   }
 }
 
@@ -301,7 +373,7 @@ async function createZipJobWithCache(spec, usuarioId = null) {
   return createZipJob(spec, usuarioId);
 }
 
-function createPeriodPaqueteJob(periodo, usuarioId = null) {
+async function createPeriodPaqueteJob(periodo, usuarioId = null) {
   return createZipJobWithCache({
     kind: 'periodo-paquete',
     periodoId: periodo.id,

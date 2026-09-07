@@ -1,29 +1,54 @@
 #!/usr/bin/env node
 /**
  * Proceso hijo: genera ZIP sin bloquear el event loop del servidor web principal.
+ * Se mantiene vivo entre trabajos (el fork + initPool cuesta segundos en hosting compartido).
  */
 require('dotenv').config();
 
 const db = require('./db-mysql');
 const { runZipJobToDisk } = require('./soportes-zip-job-runner');
 
+let poolReady = null;
+let ocupado = false;
+
+function ensurePool() {
+  if (!poolReady) poolReady = db.initPool();
+  return poolReady;
+}
+
+function send(msg) {
+  if (process.send) process.send(msg);
+}
+
 async function handleRun(job) {
-  await db.initPool();
+  await ensurePool();
   const result = await runZipJobToDisk(job, (patch) => {
-    if (process.send) process.send({ type: 'progress', ...patch });
+    send({ type: 'progress', jobId: job.id, ...patch });
   });
-  if (process.send) {
-    process.send({ type: 'done', filePath: result.filePath, filesAdded: result.filesAdded });
-  }
+  send({ type: 'done', jobId: job.id, filePath: result.filePath, filesAdded: result.filesAdded });
 }
 
 process.on('message', (msg) => {
-  if (!msg || msg.type !== 'run' || !msg.job) return;
+  if (!msg || typeof msg !== 'object') return;
+
+  if (msg.type === 'shutdown') {
+    process.exit(0);
+    return;
+  }
+
+  if (msg.type !== 'run' || !msg.job) return;
+
+  const jobId = msg.job.id;
+  if (ocupado) {
+    send({ type: 'error', jobId, error: 'Proceso ZIP ocupado' });
+    return;
+  }
+  ocupado = true;
   handleRun(msg.job)
-    .then(() => process.exit(0))
+    .then(() => { ocupado = false; })
     .catch((e) => {
-      if (process.send) process.send({ type: 'error', error: e.message || 'Error al generar ZIP' });
-      process.exit(1);
+      ocupado = false;
+      send({ type: 'error', jobId, error: e.message || 'Error al generar ZIP' });
     });
 });
 
