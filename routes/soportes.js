@@ -853,18 +853,27 @@ router.get('/soportes/pdx/buscar-archivadas', requireAuth, requireRoleOrPerm(
       return res.status(403).json({ error: 'Sin permiso para buscar reportes archivados' });
     }
     const q = String(req.query.q || '').trim();
+    const slotFiltro = String(req.query.slot || '').toUpperCase();
     if (q.length < 2 || !tokenizeSearchQuery(q).length) return res.json({ resultados: [] });
     const visiblesSet = await loadVisibleEnSoportesSet();
     const { sql: whereSql, params: whereParams } = buildPdxBusquedaWhere(q);
     const archivos = await queryPdxBuscarArchivadasConUsuarios(whereSql, whereParams);
+    const { resolverDestinoImportacion } = require('../utils/soportes-deposito-import');
+    const { carpetaCoincideSlotDeposito } = require('../utils/soportes-deposito-filtro');
     const limitHit = Array.isArray(archivos) && archivos.length >= 150;
     const resultados = archivos.filter((a) => {
       if (!usuarioVeCarpetaPdx(req, a)) return false;
-      if (Number(a.archivada_manual) === 1) return true;
-      const vis = resolveVisibilidadPeriodo(a.periodo, 'pdx', periodoToRefId(a.periodo), visiblesSet);
-      return vis === 'archivo';
+      if (Number(a.archivada_manual) === 1) {
+        // ok: archivada a mano
+      } else {
+        const vis = resolveVisibilidadPeriodo(a.periodo, 'pdx', periodoToRefId(a.periodo), visiblesSet);
+        if (vis !== 'archivo') return false;
+      }
+      if (slotFiltro && !carpetaCoincideSlotDeposito(slotFiltro, a)) return false;
+      return true;
     }).map((a) => {
       const enriched = enrichArchivoPdxConNombreDescarga(a, { nombre_display: a.carpeta_nombre });
+      const dest = resolverDestinoImportacion(a);
       return {
         archivo_id: a.id,
         paciente_nombre: a.paciente_nombre,
@@ -881,7 +890,11 @@ router.get('/soportes/pdx/buscar-archivadas', requireAuth, requireRoleOrPerm(
         subido_por_nombre: a.subido_por_nombre || null,
         editado_por_nombre: a.editado_por_nombre || null,
         creado_en: a.creado_en || null,
-        editado_en: a.editado_en || null
+        editado_en: a.editado_en || null,
+        destino_importacion: dest.modo === 'no_soportes' ? '—' : (dest.modo === 'vinculo' ? dest.etiqueta : (dest.slot || 'PDX')),
+        destino_modo: dest.modo,
+        puede_vincular_fe: dest.modo !== 'no_soportes',
+        puede_importar_ucqn: true
       };
     });
     res.json({ resultados, limit: 150, truncated: limitHit });

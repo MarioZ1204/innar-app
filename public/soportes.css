@@ -1767,6 +1767,58 @@ body.sop-arm-drag-active {
 }
 
 /* Importar PDX — resultados en modal */
+.sop-import-origen {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0 0 12px;
+}
+
+.sop-import-origen-label {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: #475569;
+}
+
+.sop-import-origen-opts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.sop-import-origen-opt {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  padding: 8px 12px;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  background: #fff;
+  font-size: 0.8rem;
+  color: #334155;
+  cursor: pointer;
+  user-select: none;
+  transition: border-color 0.12s, background 0.12s, box-shadow 0.12s;
+}
+
+.sop-import-origen-opt:hover {
+  border-color: #cbd5e1;
+  background: #f8fafc;
+}
+
+.sop-import-origen-opt:has(input:checked) {
+  border-color: var(--innar-accent, #0ea5e9);
+  background: var(--innar-accent-soft, #e0f2fe);
+  box-shadow: 0 0 0 1px var(--innar-accent, #0ea5e9);
+  font-weight: 600;
+}
+
+.sop-import-origen-opt input {
+  margin: 0;
+  accent-color: var(--innar-accent, #0ea5e9);
+}
+
 .sop-import-results {
   max-height: 220px;
   overflow-y: auto;

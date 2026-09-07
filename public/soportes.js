@@ -6711,6 +6711,8 @@
     let selectedId = null;
     const selectedIds = new Set();
     let searchTimer = null;
+    let origenBusqueda = 'cargar';
+    const puedeHistorico = sopPerm('modulo.reportes_historico');
     const titulos = { PDX: 'reporte (PDX)', CRC: 'comprobante (CRC)', OPF: 'orden / HC (OPF)' };
     const filtrosHint = {
       OPF: 'Solo carpetas <strong>ORDEN + HC</strong> y similares.',
@@ -6718,16 +6720,31 @@
       PDX: 'Solo carpetas <strong>PSG</strong>, <strong>VTM</strong>, <strong>EEG</strong> y <strong>TEST DE LATENCIA</strong>.'
     };
     const titulo = esUcqn
-      ? 'archivos de Cargar reportes'
+      ? 'archivos de reportes'
       : (filtroSlot ? titulos[filtroSlot] || filtroSlot : 'archivo cargado');
     const hintFiltro = esUcqn
       ? '<p class="sop-pdx-format-nota" style="margin:-4px 0 12px">Busque por <strong>paciente</strong>, <strong>documento</strong>, <strong>estudio</strong> o nombre de archivo. Puede marcar varios. Se copian a UCQN sin modificar el original; si no existe la carpeta de la persona, se crea.</p>'
       : (filtroSlot && filtrosHint[filtroSlot]
         ? `<p class="sop-pdx-format-nota" style="margin:-4px 0 12px">${filtrosHint[filtroSlot]}</p>`
         : '');
+    const origenHtml = `
+      <div class="sop-import-origen" role="radiogroup" aria-label="Origen de búsqueda">
+        <span class="sop-import-origen-label">Origen</span>
+        <div class="sop-import-origen-opts">
+          <label class="sop-import-origen-opt">
+            <input type="radio" name="sopImpOrigen" value="cargar" checked>
+            Buscar desde Reportes (Cargar reportes)
+          </label>
+          ${puedeHistorico ? `<label class="sop-import-origen-opt">
+            <input type="radio" name="sopImpOrigen" value="anteriores">
+            Buscar desde Reportes Anteriores
+          </label>` : ''}
+        </div>
+      </div>`;
     const modal = openSopModal(`
       <h3><i data-lucide="database" style="vertical-align:-3px;width:22px"></i> Buscar ${escapeHtml(titulo)}</h3>
-      <p style="font-size:.85rem;color:#64748b;margin:-8px 0 12px">${esUcqn ? 'Seleccione uno o más PDF de Cargar reportes.' : 'Busque por paciente y seleccione el archivo. Se copiará al expediente sin modificar el original.'}</p>
+      <p style="font-size:.85rem;color:#64748b;margin:-8px 0 12px" id="sopImpLead">${esUcqn ? 'Seleccione uno o más PDF.' : 'Busque por paciente y seleccione el archivo. Se copiará al expediente sin modificar el original.'}</p>
+      ${origenHtml}
       ${hintFiltro}
       <div class="sop-field">
         <label>Paciente, documento, estudio o archivo</label>
@@ -6737,7 +6754,7 @@
         </div>
       </div>
       <div id="sopImpPdxResults" class="sop-import-results">
-        <div class="sop-empty" style="padding:20px;font-size:.85rem">Escriba para buscar entre los archivos cargados</div>
+        <div class="sop-empty" style="padding:20px;font-size:.85rem">Escriba para buscar entre los archivos</div>
       </div>
       <div class="sop-dialog-actions">
         <button type="button" class="sop-btn sop-btn-ghost" id="sopImpCancel">Cancelar</button>
@@ -6746,6 +6763,26 @@
     const resultsEl = modal.querySelector('#sopImpPdxResults');
     const btnOk = modal.querySelector('#sopImpOk');
     const input = modal.querySelector('#sopImpPdxBuscar');
+    const leadEl = modal.querySelector('#sopImpLead');
+
+    function actualizarLeadOrigen() {
+      if (!leadEl) return;
+      if (esUcqn) {
+        leadEl.textContent = origenBusqueda === 'anteriores'
+          ? 'Seleccione uno o más PDF de Reportes anteriores.'
+          : 'Seleccione uno o más PDF de Cargar reportes.';
+        return;
+      }
+      leadEl.textContent = origenBusqueda === 'anteriores'
+        ? 'Busque en Reportes anteriores y seleccione el archivo. Se copiará al expediente sin modificar el original.'
+        : 'Busque en Cargar reportes y seleccione el archivo. Se copiará al expediente sin modificar el original.';
+    }
+
+    function limpiarSeleccionImport() {
+      selectedId = null;
+      selectedIds.clear();
+      btnOk.disabled = true;
+    }
 
     function renderImportResults(list) {
       let items = list || [];
@@ -6754,9 +6791,7 @@
       }
       if (!items.length) {
         resultsEl.innerHTML = '<div class="sop-empty" style="padding:20px;font-size:.85rem">Sin resultados para esta búsqueda</div>';
-        selectedId = null;
-        selectedIds.clear();
-        btnOk.disabled = true;
+        limpiarSeleccionImport();
         return;
       }
       resultsEl.innerHTML = items.map((r) => {
@@ -6797,21 +6832,39 @@
       const q = input.value.trim();
       if (q.length < 2) {
         resultsEl.innerHTML = '<div class="sop-empty" style="padding:20px;font-size:.85rem">Escriba al menos 2 caracteres</div>';
-        selectedId = null;
-        btnOk.disabled = true;
+        limpiarSeleccionImport();
         return;
       }
       resultsEl.innerHTML = '<div class="sop-empty" style="padding:20px"><i data-lucide="loader" class="sop-empty-icon"></i> Buscando…</div>';
       sopIcons(resultsEl);
       try {
         const slotParam = (!esUcqn && filtroSlot) ? `&slot=${encodeURIComponent(filtroSlot)}` : '';
-        const res = await apiFetch(`/api/soportes/pdx/buscar?q=${encodeURIComponent(q)}${slotParam}`);
-        const data = await res.json();
+        const base = origenBusqueda === 'anteriores'
+          ? '/api/soportes/pdx/buscar-archivadas'
+          : '/api/soportes/pdx/buscar';
+        const res = await apiFetch(`${base}?q=${encodeURIComponent(q)}${slotParam}`);
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error || 'Error en la búsqueda');
         renderImportResults(data.resultados || []);
       } catch (e) {
         resultsEl.innerHTML = `<div class="sop-empty" style="padding:20px;color:#dc2626">${escapeHtml(e.message)}</div>`;
+        limpiarSeleccionImport();
       }
     }
+
+    modal.querySelectorAll('input[name="sopImpOrigen"]').forEach((radio) => {
+      radio.addEventListener('change', () => {
+        if (!radio.checked) return;
+        origenBusqueda = radio.value === 'anteriores' ? 'anteriores' : 'cargar';
+        actualizarLeadOrigen();
+        limpiarSeleccionImport();
+        if (input.value.trim().length >= 2) runImportSearch();
+        else {
+          resultsEl.innerHTML = '<div class="sop-empty" style="padding:20px;font-size:.85rem">Escriba para buscar entre los archivos</div>';
+        }
+      });
+    });
+    actualizarLeadOrigen();
 
     input.addEventListener('input', () => {
       clearTimeout(searchTimer);
