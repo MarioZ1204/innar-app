@@ -1906,6 +1906,17 @@ const runtimeMigrations = [
         INDEX idx_llamado_jornada_fecha (fecha)
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`);
     }
+  },
+  {
+    name: 'rt_estudio_duraciones_test_latencia',
+    description: 'Añade Test de Latencia al catálogo de estudios de electrodiagnóstico',
+    run: async (db) => {
+      if (!(await tableExists(db, 'estudio_duraciones'))) return;
+      await db.execute(
+        `INSERT IGNORE INTO estudio_duraciones (nombre, duracion_minutos, duracion_min, duracion_max)
+         VALUES ('Test de Latencia', 480, NULL, NULL)`
+      );
+    }
   }
 ];
 

@@ -59,6 +59,28 @@ describe('server bootstrap (smoke)', () => {
     await expect(mig.run(db)).resolves.toBeUndefined();
   });
 
+  test('rt_estudio_duraciones_test_latencia inserta Test de Latencia', async () => {
+    const { runtimeMigrations } = require('../migrations/runtime-migrations');
+    const mig = runtimeMigrations.find((m) => m.name === 'rt_estudio_duraciones_test_latencia');
+    expect(mig).toBeTruthy();
+    const inserts = [];
+    const db = {
+      async query(sql) {
+        if (String(sql).includes('information_schema.TABLES')) return [{ cnt: 1 }];
+        return [];
+      },
+      async execute(sql, params) {
+        inserts.push({ sql: String(sql), params });
+        return { affectedRows: 1 };
+      }
+    };
+    await expect(mig.run(db)).resolves.toBeUndefined();
+    expect(inserts).toHaveLength(1);
+    expect(inserts[0].sql).toMatch(/INSERT IGNORE INTO estudio_duraciones/i);
+    expect(inserts[0].params).toBeUndefined();
+    expect(inserts[0].sql).toMatch(/Test de Latencia/);
+  });
+
   test('socket/handlers exporta attachSockets (stub sin Socket.IO)', () => {
     const s = require('../socket/handlers');
     expect(typeof s.attachSockets).toBe('function');

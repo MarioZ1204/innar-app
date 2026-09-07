@@ -249,7 +249,8 @@ async function initializeDatabase() {
               ('PSG con Titulación de Dispositivo Médico CPAP', 480, NULL, NULL),
               ('PSG con Titulación de Dispositivo Médico BPAP', 480, NULL, NULL),
               ('Electroencefalograma', 60, NULL, NULL),
-              ('Monitorización Electroencefalografica por Video y Radio', NULL, 60, 10080);
+              ('Monitorización Electroencefalografica por Video y Radio', NULL, 60, 10080),
+              ('Test de Latencia', 480, NULL, NULL);
             `;
             
             conn.query(seedEstudios, (err) => {
