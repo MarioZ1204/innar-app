@@ -69,6 +69,17 @@ describe('soportes-zip-cache: publicación sin bloquear el servidor', () => {
     expect(fs.readFileSync(zipPath, 'utf8')).toBe('contenido-zip-c');
   });
 
+  test('huella de carpeta contenedora incluye subcarpetas (Facturas FIDU)', async () => {
+    let sql = '';
+    db.query.mockImplementation(async (q) => {
+      sql = String(q);
+      return [{ file_count: 12, exp_count: 4, max_ts: 1700000000 }];
+    });
+    const fp = await cache.computeJobFingerprint({ kind: 'dia-carpeta', diaId: 99 });
+    expect(fp.file_count).toBe(12);
+    expect(sql).toMatch(/RECURSIVE tree|parent_id/i);
+  });
+
   test('regenerar sobre una caché existente la reemplaza', async () => {
     const spec = { kind: 'contenedor', contenedorId: 12 };
     const { zipPath } = cache.cachePaths(cache.jobCacheId(spec));

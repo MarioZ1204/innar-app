@@ -1374,13 +1374,11 @@
   }
 
   function iniciarDescargaArchivoEnlace(apiPath, filename) {
-    const a = document.createElement('a');
-    a.href = apiPath;
-    a.rel = 'noopener';
-    if (filename) a.download = filename;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
+    // Tras el sondeo async el navegador bloquea a.click() sin gesto de usuario
+    // (el ZIP «listo» desaparecía y no bajaba). iframe + Content-Disposition
+    // inicia la descarga nativa en streaming y envía la cookie de sesión.
+    iniciarDescargaArchivoIframe(apiPath);
+    void filename;
   }
 
   function dispararDescargaBlob(blob, filename) {
@@ -1480,7 +1478,11 @@
       const cancelBtn = canCancel
         ? `<button type="button" class="sop-btn sop-btn-ghost sop-btn-sm sop-zip-job-cancel" data-zip-local="${escapeHtml(localId)}">Cancelar</button>`
         : '';
-      const acciones = `${dlBtn}${cancelBtn}`;
+      const canClose = err || done || cancelado || j.status === 'ready';
+      const closeBtn = canClose
+        ? `<button type="button" class="sop-btn sop-btn-ghost sop-btn-sm sop-zip-job-close" data-zip-local="${escapeHtml(localId)}">Cerrar</button>`
+        : '';
+      const acciones = `${dlBtn}${cancelBtn}${closeBtn}`;
       return `<li class="sop-zip-job-item${err ? ' is-error' : ''}${done ? ' is-done' : ''}${cancelado ? ' is-cancelled' : ''}${queued ? ' is-queued' : ''}${running ? ' is-running' : ''}" data-zip-local="${escapeHtml(localId)}">
         <div class="sop-zip-job-row">
           <span class="sop-zip-job-name">${escapeHtml(j.label || j.filename || 'ZIP')}</span>
@@ -1553,6 +1555,14 @@
         void sopZipBgCancelar(cancelar.dataset.zipLocal);
         return;
       }
+      const cerrar = ev.target.closest('.sop-zip-job-close');
+      if (cerrar) {
+        const closeId = cerrar.dataset.zipLocal;
+        sopZipBgStopPoll(closeId);
+        sopZipBg.jobs.delete(closeId);
+        sopZipBgRender();
+        return;
+      }
       const btn = ev.target.closest('.sop-zip-job-dl');
       if (!btn) return;
       const localId = btn.dataset.zipLocal;
@@ -1561,11 +1571,11 @@
       btn.disabled = true;
       descargarZipJobAlServidor(j)
         .then(() => {
-          j.status = 'downloaded';
+          j.canDownload = true;
+          j.status = 'ready';
           j.progress = 100;
-          j.message = 'Descarga completada';
+          j.message = 'Descarga iniciada. Si no aparece, pulse Descargar de nuevo';
           sopZipBgRender();
-          sopZipBgRemoveLater(localId, 7000);
         })
         .catch((e) => {
           j.canDownload = true;
@@ -1627,13 +1637,14 @@
         sopZipBgRender();
         try {
           await descargarZipJobAlServidor(j);
-          j.message = 'Descarga iniciada en el navegador — puede seguir trabajando';
-          j.status = 'downloaded';
+          j.canDownload = true;
+          j.status = 'ready';
+          j.message = 'ZIP listo. Si no baja, pulse Descargar';
           sopZipBgRender();
-          sopToast(`ZIP listo: ${j.label || j.filename}`, 'success');
-          sopZipBgRemoveLater(localId, 7000);
+          sopToast(`ZIP listo: ${j.label || j.filename}. Si no baja, pulse Descargar.`, 'success');
         } catch (e) {
           j.status = 'ready';
+          j.canDownload = true;
           j.message = `Listo. Use «Descargar» si no inició (${e.message || 'error'})`;
           sopToast(e.message || 'No se pudo descargar el ZIP', 'error');
           sopZipBgRender();
@@ -5323,7 +5334,7 @@
         else seleccionarDiaArmado(id);
       };
       card.addEventListener('click', (ev) => {
-        if (ev.target.closest('[data-dia-edit],[data-dia-del],[data-dia-move],.sop-folder-card-actions,.sop-folder-list-actions')) return;
+        if (ev.target.closest('[data-dia-edit],[data-dia-del],[data-dia-move],[data-arm-zip],.sop-folder-card-actions,.sop-folder-list-actions')) return;
         if (card.classList.contains('sop-folder-dragging')) return;
         if (Date.now() < armBlockClickUntil) return;
         open();

@@ -12,7 +12,7 @@ const logger = require('./logger');
 
 const PERIOD_ZIP_KINDS = new Set(['periodo-paquete', 'periodo-unificado', 'periodo-facturados']);
 /** Incrementar al cambiar la estructura del ZIP (invalida caché antigua). */
-const ZIP_CACHE_LAYOUT_VERSION = 3;
+const ZIP_CACHE_LAYOUT_VERSION = 4;
 
 function getCacheDir() {
   const dir = path.join(getUploadsRoot(), 'sop-zip-cache');
@@ -76,25 +76,50 @@ async function computePeriodoFingerprint(periodoId, kind) {
   return rows[0] || { file_count: 0, exp_count: 0, max_ts: 0 };
 }
 
-async function computeDiaFingerprint(diaId) {
-  const rows = await db.query(
-    `SELECT
-       COUNT(DISTINCT a.id) + COUNT(DISTINCT ra.id) AS file_count,
+const FINGERPRINT_SELECT = `COUNT(DISTINCT a.id) + COUNT(DISTINCT ra.id) AS file_count,
        COUNT(DISTINCT e.id) AS exp_count,
        COALESCE(MAX(GREATEST(
          COALESCE(UNIX_TIMESTAMP(a.creado_en), 0),
          COALESCE(UNIX_TIMESTAMP(ra.creado_en), 0),
          COALESCE(UNIX_TIMESTAMP(ra.actualizado_en), 0)
-       )), 0) AS max_ts
-     FROM sop_dias d
-     JOIN sop_contenedores c ON c.dia_id = d.id
-     JOIN sop_expedientes e ON e.contenedor_id = c.id
-     LEFT JOIN sop_exp_archivos a ON a.expediente_id = e.id
-     LEFT JOIN sop_rips_archivos ra ON ra.expediente_id = e.id
-     WHERE d.id = ?`,
-    [diaId]
-  );
-  return rows[0] || { file_count: 0, exp_count: 0, max_ts: 0 };
+       )), 0) AS max_ts`;
+
+/**
+ * Incluye la carpeta y sus descendientes. Si no, Facturas FIDU (contenedora)
+ * daba file_count=0 y la caché / reutilización fallaban en silencio.
+ */
+async function computeDiaFingerprint(diaId) {
+  const id = parseInt(diaId, 10);
+  if (!id) return { file_count: 0, exp_count: 0, max_ts: 0 };
+  try {
+    const rows = await db.query(
+      `WITH RECURSIVE tree AS (
+         SELECT id FROM sop_dias WHERE id = ?
+         UNION ALL
+         SELECT d.id FROM sop_dias d INNER JOIN tree t ON d.parent_id = t.id
+       )
+       SELECT ${FINGERPRINT_SELECT}
+       FROM tree
+       JOIN sop_contenedores c ON c.dia_id = tree.id
+       JOIN sop_expedientes e ON e.contenedor_id = c.id
+       LEFT JOIN sop_exp_archivos a ON a.expediente_id = e.id
+       LEFT JOIN sop_rips_archivos ra ON ra.expediente_id = e.id`,
+      [id]
+    );
+    return rows[0] || { file_count: 0, exp_count: 0, max_ts: 0 };
+  } catch (_) {
+    const rows = await db.query(
+      `SELECT ${FINGERPRINT_SELECT}
+       FROM sop_dias d
+       JOIN sop_contenedores c ON c.dia_id = d.id
+       JOIN sop_expedientes e ON e.contenedor_id = c.id
+       LEFT JOIN sop_exp_archivos a ON a.expediente_id = e.id
+       LEFT JOIN sop_rips_archivos ra ON ra.expediente_id = e.id
+       WHERE d.id = ? OR d.parent_id = ?`,
+      [id, id]
+    );
+    return rows[0] || { file_count: 0, exp_count: 0, max_ts: 0 };
+  }
 }
 
 async function computeContenedorFingerprint(contenedorId) {
