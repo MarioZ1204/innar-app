@@ -1374,11 +1374,24 @@
   }
 
   function iniciarDescargaArchivoEnlace(apiPath, filename) {
-    // Tras el sondeo async el navegador bloquea a.click() sin gesto de usuario
-    // (el ZIP «listo» desaparecía y no bajaba). iframe + Content-Disposition
-    // inicia la descarga nativa en streaming y envía la cookie de sesión.
-    iniciarDescargaArchivoIframe(apiPath);
-    void filename;
+    const a = document.createElement('a');
+    a.href = apiPath;
+    a.rel = 'noopener';
+    if (filename) a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+  }
+
+  /**
+   * Descarga un ZIP generado en segundo plano.
+   * Usa XHR+blob: no depende de gesto del usuario (el sondeo es async) y
+   * detecta errores HTTP; el iframe no dispara descarga en Chrome/Edge.
+   */
+  async function descargarZipJobAlServidor(j) {
+    if (!j?.apiJobId) throw new Error('ZIP no disponible');
+    const url = `/api/soportes/armado/zip/job/${j.apiJobId}/descargar`;
+    return descargarArchivoConProgreso(url, j.filename || j.label, { title: 'Descargando ZIP' });
   }
 
   function dispararDescargaBlob(blob, filename) {
@@ -1497,16 +1510,6 @@
   }
 
   /**
-   * Descarga nativa del navegador: transmite a disco al instante, sin cargar
-   * el ZIP completo en memoria y con el gestor de descargas del navegador.
-   */
-  async function descargarZipJobAlServidor(j) {
-    if (!j?.apiJobId) throw new Error('ZIP no disponible');
-    const url = `/api/soportes/armado/zip/job/${j.apiJobId}/descargar`;
-    iniciarDescargaArchivoEnlace(url, j.filename || j.label);
-  }
-
-  /**
    * Cancela en el servidor (mata el proceso que comprime) y retira la tarjeta.
    * Si el job aún no tiene id, se marca para cancelarlo al recibirlo.
    */
@@ -1571,11 +1574,11 @@
       btn.disabled = true;
       descargarZipJobAlServidor(j)
         .then(() => {
-          j.canDownload = true;
-          j.status = 'ready';
+          j.status = 'downloaded';
           j.progress = 100;
-          j.message = 'Descarga iniciada. Si no aparece, pulse Descargar de nuevo';
+          j.message = 'Descarga completada';
           sopZipBgRender();
+          sopZipBgRemoveLater(localId, 7000);
         })
         .catch((e) => {
           j.canDownload = true;
@@ -1638,14 +1641,15 @@
         try {
           await descargarZipJobAlServidor(j);
           j.canDownload = true;
-          j.status = 'ready';
-          j.message = 'ZIP listo. Si no baja, pulse Descargar';
+          j.status = 'downloaded';
+          j.message = 'Descarga completada';
           sopZipBgRender();
-          sopToast(`ZIP listo: ${j.label || j.filename}. Si no baja, pulse Descargar.`, 'success');
+          sopToast(`ZIP descargado: ${j.label || j.filename}`, 'success');
+          sopZipBgRemoveLater(localId, 7000);
         } catch (e) {
           j.status = 'ready';
           j.canDownload = true;
-          j.message = `Listo. Use «Descargar» si no inició (${e.message || 'error'})`;
+          j.message = `Error al descargar: ${e.message || 'error'} — pulse Descargar`;
           sopToast(e.message || 'No se pudo descargar el ZIP', 'error');
           sopZipBgRender();
         }
