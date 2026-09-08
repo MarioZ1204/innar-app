@@ -212,14 +212,19 @@ function bindArchiveStreamGuards(archive, res) {
 async function loadArchivosByExpedienteIds(expIds) {
   const map = new Map();
   if (!expIds.length) return map;
-  const placeholders = expIds.map(() => '?').join(',');
-  const archivos = await db.query(
-    `SELECT * FROM sop_exp_archivos WHERE expediente_id IN (${placeholders})`,
-    expIds
-  );
-  for (const a of archivos) {
-    if (!map.has(a.expediente_id)) map.set(a.expediente_id, []);
-    map.get(a.expediente_id).push(a);
+  const unique = [...new Set(expIds)];
+  const CHUNK = 250;
+  for (let i = 0; i < unique.length; i += CHUNK) {
+    const chunk = unique.slice(i, i + CHUNK);
+    const placeholders = chunk.map(() => '?').join(',');
+    const archivos = await db.query(
+      `SELECT * FROM sop_exp_archivos WHERE expediente_id IN (${placeholders})`,
+      chunk
+    );
+    for (const a of archivos) {
+      if (!map.has(a.expediente_id)) map.set(a.expediente_id, []);
+      map.get(a.expediente_id).push(a);
+    }
   }
   return map;
 }
@@ -228,14 +233,19 @@ async function loadRipsArchivosByExpedienteIds(expIds) {
   const map = new Map();
   if (!expIds.length) return map;
   try {
-    const placeholders = expIds.map(() => '?').join(',');
-    const rows = await db.query(
-      `SELECT * FROM sop_rips_archivos WHERE expediente_id IN (${placeholders})`,
-      expIds
-    );
-    for (const a of rows) {
-      if (!map.has(a.expediente_id)) map.set(a.expediente_id, []);
-      map.get(a.expediente_id).push(a);
+    const unique = [...new Set(expIds)];
+    const CHUNK = 250;
+    for (let i = 0; i < unique.length; i += CHUNK) {
+      const chunk = unique.slice(i, i + CHUNK);
+      const placeholders = chunk.map(() => '?').join(',');
+      const rows = await db.query(
+        `SELECT * FROM sop_rips_archivos WHERE expediente_id IN (${placeholders})`,
+        chunk
+      );
+      for (const a of rows) {
+        if (!map.has(a.expediente_id)) map.set(a.expediente_id, []);
+        map.get(a.expediente_id).push(a);
+      }
     }
   } catch (_) { /* tabla opcional */ }
   return map;
@@ -362,61 +372,43 @@ function ensureRipsFacturaFolder(entries, usedPaths, codSeg) {
   entries.push({ placeholder: true, name: dirName, content: Buffer.alloc(0) });
 }
 
-async function queryExpedientesDia(diaId) {
-  return db.query(
-    `SELECT e.id, e.codigo, e.carpeta_fisica, e.numero_factura, e.paciente_nombre, c.tipo AS contenedor_tipo, d.nombre_display AS dia_nombre,
-            d.estado_facturacion, p.periodo, p.etiqueta AS periodo_etiqueta
+const EXPEDIENTE_ZIP_SELECT = `SELECT e.id, e.codigo, e.carpeta_fisica, e.numero_factura, e.paciente_nombre, c.tipo AS contenedor_tipo, c.dia_id AS dia_id,
+            d.nombre_display AS dia_nombre, d.estado_facturacion, p.periodo, p.etiqueta AS periodo_etiqueta
      FROM sop_expedientes e
      JOIN sop_contenedores c ON c.id = e.contenedor_id
      JOIN sop_dias d ON d.id = c.dia_id
-     JOIN sop_periodos p ON p.id = d.periodo_id
-     WHERE c.dia_id = ?
-     ORDER BY c.tipo ASC, e.codigo ASC`,
+     JOIN sop_periodos p ON p.id = d.periodo_id`;
+
+async function queryExpedientesDia(diaId) {
+  return db.query(
+    `${EXPEDIENTE_ZIP_SELECT} WHERE c.dia_id = ? ORDER BY c.tipo ASC, e.codigo ASC`,
     [diaId]
   );
 }
 
-function groupExpedientesPorFactura(expedientes) {
-  const grupos = new Map();
-  for (const exp of expedientes) {
-    const cod = facturaFolderName(exp);
-    if (!grupos.has(cod)) {
-      grupos.set(cod, {
-        cod,
-        soportes: [],
-        rips: [],
-        diaNombre: exp.dia_nombre,
-        ctx: {
-          periodo: exp.periodo,
-          nombre_display: exp.dia_nombre,
-          estado_facturacion: exp.estado_facturacion
-        }
-      });
+/** Expedientes de varias carpetas-día en pocas consultas (ZIP contenedora). */
+async function queryExpedientesDiaIds(diaIds) {
+  const map = new Map();
+  const unique = [...new Set((diaIds || []).filter(Boolean))];
+  if (!unique.length) return map;
+  const CHUNK = 80;
+  for (let i = 0; i < unique.length; i += CHUNK) {
+    const chunk = unique.slice(i, i + CHUNK);
+    const placeholders = chunk.map(() => '?').join(',');
+    const rows = await db.query(
+      `${EXPEDIENTE_ZIP_SELECT} WHERE c.dia_id IN (${placeholders}) ORDER BY c.dia_id ASC, c.tipo ASC, e.codigo ASC`,
+      chunk
+    );
+    for (const r of rows) {
+      if (!map.has(r.dia_id)) map.set(r.dia_id, []);
+      map.get(r.dia_id).push(r);
     }
-    const g = grupos.get(cod);
-    if (exp.contenedor_tipo === 'rips') g.rips.push(exp);
-    else g.soportes.push(exp);
   }
-  return grupos;
+  return map;
 }
 
-async function collectDiaZipEntries(diaId, usedPaths = null, opts = {}) {
-  const repair = opts.repair === true;
-  const expedientes = await queryExpedientesDia(diaId);
-  if (repair) {
-    for (const exp of expedientes) {
-      try {
-        await repararArchivosExpediente(exp.id, exp);
-      } catch (e) {
-        logger.warn('[SOPORTES] zip reparar expediente:', e.message);
-      }
-    }
-  }
-  const expIds = expedientes.map((e) => e.id);
-  const archivosByExp = await loadArchivosByExpedienteIds(expIds);
-  const ripsByExp = await loadRipsArchivosByExpedienteIds(expIds);
+function buildDiaZipEntriesFromExpedientes(expedientes, archivosByExp, ripsByExp, usedPaths = null) {
   const entries = [];
-
   for (const exp of expedientes) {
     const codSeg = expedienteZipSegment(exp);
     const prefixRoot = exp.contenedor_tipo === 'rips' ? 'RIPS' : 'SOPORTES';
@@ -466,8 +458,61 @@ async function collectDiaZipEntries(diaId, usedPaths = null, opts = {}) {
       entries.push(...part);
     }
   }
-
   return filterValidZipEntries(entries);
+}
+
+function appendPrefixedZipEntries(dia, pathPrefix, usedPaths, out, part) {
+  for (const e of part) {
+    let name = pathPrefix ? `${pathPrefix}/${e.name}` : e.name;
+    if (usedPaths.has(name)) {
+      const seg = zipArchiveSegment(dia.nombre_display || `dia-${dia.id}`);
+      name = pathPrefix ? `${pathPrefix}/${seg}_${e.name}` : `${seg}_${e.name}`;
+    }
+    usedPaths.add(name);
+    out.push({ absPath: e.absPath, name });
+  }
+}
+
+function groupExpedientesPorFactura(expedientes) {
+  const grupos = new Map();
+  for (const exp of expedientes) {
+    const cod = facturaFolderName(exp);
+    if (!grupos.has(cod)) {
+      grupos.set(cod, {
+        cod,
+        soportes: [],
+        rips: [],
+        diaNombre: exp.dia_nombre,
+        ctx: {
+          periodo: exp.periodo,
+          nombre_display: exp.dia_nombre,
+          estado_facturacion: exp.estado_facturacion
+        }
+      });
+    }
+    const g = grupos.get(cod);
+    if (exp.contenedor_tipo === 'rips') g.rips.push(exp);
+    else g.soportes.push(exp);
+  }
+  return grupos;
+}
+
+async function collectDiaZipEntries(diaId, usedPaths = null, opts = {}) {
+  const repair = opts.repair === true;
+  const expedientes = await queryExpedientesDia(diaId);
+  if (repair) {
+    for (const exp of expedientes) {
+      try {
+        await repararArchivosExpediente(exp.id, exp);
+      } catch (e) {
+        logger.warn('[SOPORTES] zip reparar expediente:', e.message);
+      }
+    }
+  }
+  const expIds = expedientes.map((e) => e.id);
+  const archivosByExp = await loadArchivosByExpedienteIds(expIds);
+  const ripsByExp = await loadRipsArchivosByExpedienteIds(expIds);
+  return buildDiaZipEntriesFromExpedientes(expedientes, archivosByExp, ripsByExp, usedPaths);
 }
 
 function pipeArchiveToResponse(res, entries) {
@@ -687,7 +732,7 @@ async function collectUcqnDiaZipEntries(dia, pathPrefix, usedPaths, out) {
   }
 }
 
-async function collectLeafDiaZipEntries(dia, pathPrefix, usedPaths, out) {
+async function collectLeafDiaZipEntries(dia, pathPrefix, usedPaths, out, preloaded = null) {
   const modo = dia.modo || 'facturacion';
   if (modo === 'ucqn') {
     await collectUcqnDiaZipEntries(dia, pathPrefix, usedPaths, out);
@@ -697,16 +742,19 @@ async function collectLeafDiaZipEntries(dia, pathPrefix, usedPaths, out) {
     await collectAnexoDiaZipEntries(dia, pathPrefix, usedPaths, out);
     return;
   }
-  const part = await collectDiaZipEntries(dia.id, null);
-  for (const e of part) {
-    let name = pathPrefix ? `${pathPrefix}/${e.name}` : e.name;
-    if (usedPaths.has(name)) {
-      const seg = zipArchiveSegment(dia.nombre_display || `dia-${dia.id}`);
-      name = pathPrefix ? `${pathPrefix}/${seg}_${e.name}` : `${seg}_${e.name}`;
-    }
-    usedPaths.add(name);
-    out.push({ absPath: e.absPath, name });
+  let part;
+  if (preloaded) {
+    const expedientes = preloaded.expsByDia.get(dia.id) || [];
+    part = buildDiaZipEntriesFromExpedientes(
+      expedientes,
+      preloaded.archivosByExp,
+      preloaded.ripsByExp,
+      null
+    );
+  } else {
+    part = await collectDiaZipEntries(dia.id, null);
   }
+  appendPrefixedZipEntries(dia, pathPrefix, usedPaths, out, part);
 }
 
 async function walkCarpetaZip(diaId, pathPrefix, diasById, childrenMap, usedPaths, out) {
@@ -725,6 +773,18 @@ async function walkCarpetaZip(diaId, pathPrefix, diasById, childrenMap, usedPath
 }
 
 async function collectCarpetaZipEntries(rootDiaId) {
+  let entries = [];
+  for await (const step of iterateCarpetaZipCollection(rootDiaId)) {
+    if (step.type === 'done') entries = step.entries;
+  }
+  return entries;
+}
+
+/**
+ * Recorre una contenedora (p. ej. Facturas FIDU) emitiendo progreso por subcarpeta.
+ * Evita quedarse en 15% sin feedback mientras recopila cientos de expedientes.
+ */
+async function* iterateCarpetaZipCollection(rootDiaId) {
   const rootRows = await db.query('SELECT * FROM sop_dias WHERE id = ?', [rootDiaId]);
   const root = rootRows[0];
   if (!root) throw new Error('Carpeta no encontrada');
@@ -735,13 +795,76 @@ async function collectCarpetaZipEntries(rootDiaId) {
   const usedPaths = new Set();
   const entries = [];
 
-  if (!root.es_contenedor) {
-    await collectLeafDiaZipEntries(root, '', usedPaths, entries);
-  } else {
-    await walkCarpetaZip(rootDiaId, '', diasById, childrenMap, usedPaths, entries);
+  const leaves = [];
+  function gatherLeaves(diaId, prefix) {
+    const dia = diasById.get(diaId);
+    if (!dia) return;
+    if (!dia.es_contenedor) {
+      leaves.push({ dia, pathPrefix: prefix });
+      return;
+    }
+    for (const child of childrenMap.get(diaId) || []) {
+      const seg = zipArchiveSegment(child.nombre_display);
+      const next = prefix ? `${prefix}/${seg}` : seg;
+      if (child.es_contenedor) gatherLeaves(child.id, next);
+      else leaves.push({ dia: child, pathPrefix: next });
+    }
   }
 
-  return filterValidZipEntries(entries);
+  if (!root.es_contenedor) {
+    leaves.push({ dia: root, pathPrefix: '' });
+  } else {
+    for (const child of childrenMap.get(rootDiaId) || []) {
+      const seg = zipArchiveSegment(child.nombre_display);
+      if (child.es_contenedor) gatherLeaves(child.id, seg);
+      else leaves.push({ dia: child, pathPrefix: seg });
+    }
+  }
+
+  const total = leaves.length;
+  if (!total) {
+    yield { type: 'done', entries: [], fileCount: 0 };
+    return;
+  }
+
+  yield {
+    type: 'progress',
+    message: `${total} carpeta(s) dentro de ${root.nombre_display || 'contenedor'}…`,
+    progress: 14
+  };
+
+  const facturacionDiaIds = leaves
+    .filter((l) => (l.dia.modo || 'facturacion') === 'facturacion')
+    .map((l) => l.dia.id);
+  let preloaded = null;
+  if (facturacionDiaIds.length) {
+    yield {
+      type: 'progress',
+      message: `Cargando expedientes de ${facturacionDiaIds.length} carpeta(s)…`,
+      progress: 15
+    };
+    const expsByDia = await queryExpedientesDiaIds(facturacionDiaIds);
+    const allExpIds = [];
+    for (const exps of expsByDia.values()) allExpIds.push(...exps.map((e) => e.id));
+    const archivosByExp = await loadArchivosByExpedienteIds(allExpIds);
+    const ripsByExp = await loadRipsArchivosByExpedienteIds(allExpIds);
+    preloaded = { expsByDia, archivosByExp, ripsByExp };
+  }
+
+  for (let i = 0; i < leaves.length; i++) {
+    const { dia, pathPrefix } = leaves[i];
+    const pct = 18 + Math.round(((i + 1) / total) * 62);
+    yield {
+      type: 'progress',
+      message: `Recopilando ${dia.nombre_display || `carpeta-${dia.id}`} (${i + 1}/${total})…`,
+      progress: pct
+    };
+    await collectLeafDiaZipEntries(dia, pathPrefix, usedPaths, entries, preloaded);
+    if ((i + 1) % 3 === 0) await yieldEventLoop();
+  }
+
+  const valid = filterValidZipEntries(entries);
+  yield { type: 'done', entries: valid, fileCount: valid.length };
 }
 
 async function streamCarpetaZip(res, rootDia) {
@@ -916,6 +1039,7 @@ module.exports = {
   bindArchiveStreamGuards,
   collectDiaZipEntries,
   collectCarpetaZipEntries,
+  iterateCarpetaZipCollection,
   collectContenedorZipEntries,
   collectExpedienteZipEntries,
   collectPeriodFacturadosEntries,

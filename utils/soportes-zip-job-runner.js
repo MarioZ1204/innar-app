@@ -10,9 +10,11 @@ const {
   queryDiasFacturacionZip,
   collectDiaZipEntries,
   collectCarpetaZipEntries,
+  iterateCarpetaZipCollection,
   collectContenedorZipEntries,
   collectExpedienteZipEntries,
   appendEntriesToArchive,
+  appendEntriesToArchiveAsync,
   filterValidZipEntries,
   loadArchivosByExpedienteIds,
   loadRipsArchivosByExpedienteIds,
@@ -54,7 +56,7 @@ async function writeZipBatches(job, batchIterator, onProgress) {
           if (batch.message != null) onProgress({ message: batch.message });
           if (batch.progress != null) onProgress({ progress: batch.progress });
           if (batch.entries?.length) {
-            appendEntriesToArchive(archive, batch.entries);
+            await appendEntriesToArchiveAsync(archive, batch.entries, 8);
             filesAdded += batch.entries.length;
           }
           await yieldEventLoop();
@@ -193,10 +195,22 @@ async function* batchesDia(job) {
 }
 
 async function* batchesDiaCarpeta(job) {
-  yield { message: 'Recopilando carpeta y subcarpetas…', progress: 15, entries: [] };
-  const entries = await collectCarpetaZipEntries(job.diaId);
+  let entries = [];
+  let fileCount = 0;
+  for await (const step of iterateCarpetaZipCollection(job.diaId)) {
+    if (step.type === 'progress') {
+      yield { message: step.message, progress: step.progress, entries: [] };
+    } else if (step.type === 'done') {
+      entries = step.entries || [];
+      fileCount = step.fileCount || entries.length;
+    }
+  }
   if (!entries.length) throw new Error('La carpeta no tiene archivos para descargar');
-  yield { message: 'Comprimiendo…', progress: 85, entries };
+  yield {
+    message: `Comprimiendo ${fileCount} archivo(s)…`,
+    progress: 85,
+    entries
+  };
 }
 
 async function* batchesContenedor(job) {

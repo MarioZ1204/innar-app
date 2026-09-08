@@ -4,6 +4,52 @@ const mysql = require('mysql2/promise');
 
 let pool = null;
 
+const DB_QUERY_RETRIES = parseInt(process.env.DB_QUERY_RETRIES || '3', 10) || 3;
+const TRANSIENT_DB_CODES = new Set([
+  'ECONNRESET',
+  'ECONNREFUSED',
+  'ETIMEDOUT',
+  'EPIPE',
+  'PROTOCOL_CONNECTION_LOST',
+  'PROTOCOL_ENQUEUE_AFTER_FATAL_ERROR',
+  'PROTOCOL_ENQUEUE_AFTER_QUIT'
+]);
+
+function isTransientDbError(err) {
+  if (!err) return false;
+  if (TRANSIENT_DB_CODES.has(err.code)) return true;
+  if (err.fatal) return true;
+  const msg = String(err.message || '');
+  return /ECONNRESET|Connection lost|server has gone away/i.test(msg);
+}
+
+function sleepMs(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function withPooledConnection(op, run) {
+  assertPool(op);
+  let lastErr;
+  for (let attempt = 0; attempt < DB_QUERY_RETRIES; attempt++) {
+    const connection = await pool.getConnection();
+    let released = false;
+    try {
+      const result = await run(connection);
+      connection.release();
+      released = true;
+      return result;
+    } catch (err) {
+      lastErr = err;
+      if (!released) {
+        try { connection.destroy(); } catch (_) { /* ignore */ }
+      }
+      if (!isTransientDbError(err) || attempt >= DB_QUERY_RETRIES - 1) throw err;
+      await sleepMs(80 * (attempt + 1));
+    }
+  }
+  throw lastErr;
+}
+
 // Crear pool de conexiones
 async function initPool() {
   if (pool) return pool;
@@ -41,14 +87,10 @@ function assertPool(op) {
 
 // Ejecutar query (SELECT) - retorna array de filas
 async function query(sql, params = []) {
-  assertPool('query');
-  const connection = await pool.getConnection();
-  try {
+  return withPooledConnection('query', async (connection) => {
     const [rows] = await connection.execute(sql, params);
     return rows;
-  } finally {
-    connection.release();
-  }
+  });
 }
 
 // Obtener una sola fila
@@ -59,14 +101,10 @@ async function queryOne(sql, params = []) {
 
 // Ejecutar INSERT/UPDATE/DELETE - retorna resultado (affected rows, lastInsertId)
 async function execute(sql, params = []) {
-  assertPool('execute');
-  const connection = await pool.getConnection();
-  try {
+  return withPooledConnection('execute', async (connection) => {
     const [result] = await connection.execute(sql, params);
     return result;
-  } finally {
-    connection.release();
-  }
+  });
 }
 
 // Preparar statement (retorna promise-based prepared statement)
