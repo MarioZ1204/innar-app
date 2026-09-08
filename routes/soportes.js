@@ -418,13 +418,26 @@ async function requireContenedorArmadoAccesible(req, res, contenedorId, visCtx =
 
 function streamZipJobDownload(res, job) {
   if (job.status === 'error') {
-    return res.status(500).json({ error: job.error || 'Error al generar ZIP' });
+    return res.status(500).json({
+      error: job.error || 'Error al generar ZIP',
+      debug: { jobStatus: job.status, jobId: job.id }
+    });
   }
-  if (job.status !== 'ready' || !job.filePath || !fs.existsSync(job.filePath)) {
+  const fileExists = job.filePath ? fs.existsSync(job.filePath) : false;
+  if (job.status !== 'ready' || !job.filePath || !fileExists) {
     return res.status(409).json({
-      error: 'El ZIP aún se está generando',
+      error: job.status === 'ready' && job.filePath && !fileExists
+        ? 'El archivo ZIP ya no está en el servidor (expiró o fue eliminado). Genere de nuevo.'
+        : 'El ZIP aún se está generando',
       status: job.status,
-      progress: job.progress
+      progress: job.progress,
+      debug: {
+        jobId: job.id,
+        filePath: job.filePath ? path.basename(job.filePath) : null,
+        fileExists,
+        fromCache: !!job.fromCache,
+        kind: job.kind
+      }
     });
   }
   // res.download admite Range: el navegador transmite a disco y puede reanudar.

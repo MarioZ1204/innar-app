@@ -1290,9 +1290,12 @@
   function descargarArchivoConProgreso(apiPath, fallbackFilename, opts = {}) {
     const title = opts.title || 'Descargando';
     const triggerBtn = opts.triggerBtn || null;
+    const zipJob = opts.zipJob || null;
+    const logZip = (level, msg, extra) => { if (zipJob) sopZipJobLog(zipJob, level, msg, extra); };
     if (triggerBtn) triggerBtn.disabled = true;
     const liberar = () => { if (triggerBtn) triggerBtn.disabled = false; };
 
+    logZip('INFO', 'XHR GET', { url: apiPath, filename: fallbackFilename });
     sopUploadBegin({ title, total: 1 });
     sopUploadSetFile(1, 1, fallbackFilename || 'descarga.zip');
 
@@ -1313,13 +1316,24 @@
       };
       xhr.onload = async () => {
         const ct = (xhr.getResponseHeader('Content-Type') || '').toLowerCase();
+        const cd = xhr.getResponseHeader('Content-Disposition') || '';
+        logZip('INFO', 'Respuesta recibida', {
+          http: xhr.status,
+          contentType: ct || '(vacío)',
+          contentDisposition: cd || '(vacío)',
+          size: xhr.response?.size
+        });
         if (xhr.status < 200 || xhr.status >= 300) {
-          let errMsg = `Error ${xhr.status}`;
+          let errMsg = `Error HTTP ${xhr.status}`;
+          let bodyText = '';
           try {
-            const text = await xhr.response.text();
-            const data = sopUploadParseJson(text);
+            bodyText = await xhr.response.text();
+            const data = sopUploadParseJson(bodyText);
             errMsg = data.error || data.detail || errMsg;
+            if (data.debug) logZip('DEBUG', 'Detalle servidor', data.debug);
+            if (data.status) logZip('DEBUG', 'Estado job servidor', { status: data.status, progress: data.progress });
           } catch (_) { /* ignore */ }
+          if (bodyText && bodyText.length < 500) logZip('DEBUG', 'Cuerpo respuesta', bodyText);
           sopUploadFinish({ state: 'error', message: errMsg });
           liberar();
           reject(new Error(errMsg));
@@ -1331,6 +1345,8 @@
             const text = await xhr.response.text();
             const data = sopUploadParseJson(text);
             errMsg = data.error || data.detail || errMsg;
+            if (data.debug) logZip('DEBUG', 'Detalle servidor', data.debug);
+            if (text.length < 500) logZip('DEBUG', 'Cuerpo JSON/HTML', text);
           } catch (_) { /* ignore */ }
           sopUploadFinish({ state: 'error', message: errMsg });
           liberar();
@@ -1339,23 +1355,36 @@
         }
         const blob = xhr.response;
         if (!blob || !blob.size) {
+          logZip('ERROR', 'Archivo vacío (blob 0 bytes)');
           sopUploadFinish({ state: 'error', message: 'Archivo vacío' });
           liberar();
           reject(new Error('Archivo vacío'));
           return;
         }
         const filename = parseZipFilenameFromXhr(xhr, fallbackFilename);
-        dispararDescargaBlob(blob, filename);
+        logZip('INFO', 'Disparando guardado local', { filename, bytes: blob.size });
+        try {
+          dispararDescargaBlob(blob, filename);
+          logZip('OK', 'Blob entregado al navegador', { filename, bytes: blob.size });
+        } catch (blobErr) {
+          logZip('ERROR', 'dispararDescargaBlob falló', blobErr.message);
+          sopUploadFinish({ state: 'error', message: blobErr.message || 'No se pudo guardar el archivo' });
+          liberar();
+          reject(blobErr);
+          return;
+        }
         sopUploadFinish({ state: 'success', message: 'Descarga completa' });
         liberar();
-        resolve({ ok: true, filename });
+        resolve({ ok: true, filename, bytes: blob.size });
       };
       xhr.onerror = () => {
+        logZip('ERROR', 'XHR onerror (red o CORS)');
         sopUploadFinish({ state: 'error', message: 'Error de conexión' });
         liberar();
         reject(new Error('Error de conexión'));
       };
       xhr.onabort = () => {
+        logZip('WARN', 'XHR abortado');
         sopUploadFinish({ state: 'error', message: 'Descarga cancelada' });
         liberar();
         reject(new Error('Descarga cancelada'));
@@ -1389,9 +1418,24 @@
    * detecta errores HTTP; el iframe no dispara descarga en Chrome/Edge.
    */
   async function descargarZipJobAlServidor(j) {
-    if (!j?.apiJobId) throw new Error('ZIP no disponible');
+    if (!j?.apiJobId) {
+      sopZipJobLog(j, 'ERROR', 'Sin job_id del servidor (apiJobId vacío)');
+      throw new Error('ZIP no disponible');
+    }
     const url = `/api/soportes/armado/zip/job/${j.apiJobId}/descargar`;
-    return descargarArchivoConProgreso(url, j.filename || j.label, { title: 'Descargando ZIP' });
+    sopZipJobLog(j, 'INFO', 'Iniciando descarga del ZIP', { url, filename: j.filename });
+    try {
+      const r = await descargarArchivoConProgreso(url, j.filename || j.label, {
+        title: 'Descargando ZIP',
+        zipJob: j
+      });
+      return r;
+    } catch (e) {
+      sopZipJobLog(j, 'ERROR', 'Descarga fallida', e.message);
+      j.showLog = true;
+      sopZipBgRender();
+      throw e;
+    }
   }
 
   function dispararDescargaBlob(blob, filename) {
@@ -1442,6 +1486,25 @@
   }
 
   const sopZipBg = { jobs: new Map(), panel: null };
+
+  function sopZipJobLogFmt(extra) {
+    if (extra == null || extra === '') return '';
+    if (typeof extra === 'string') return extra;
+    try { return JSON.stringify(extra); } catch (_) { return String(extra); }
+  }
+
+  /** Registro visible en el panel ZIP (y en consola del navegador). */
+  function sopZipJobLog(j, level, msg, extra) {
+    if (!j) return;
+    if (!Array.isArray(j.log)) j.log = [];
+    const ts = new Date().toLocaleTimeString('es-CO', { hour12: false });
+    const suffix = extra != null && extra !== '' ? ` | ${sopZipJobLogFmt(extra)}` : '';
+    j.log.push(`${ts} [${level}] ${msg}${suffix}`);
+    if (j.log.length > 120) j.log = j.log.slice(-120);
+    if (level === 'ERROR') j.showLog = true;
+    console.log('[SOP-ZIP]', j.label || j.filename || j.apiJobId, level, msg, extra ?? '');
+    sopZipBgRender();
+  }
 
   function sopZipBgPanelEnsure() {
     if (sopZipBg.panel?.isConnected) return sopZipBg.panel;
@@ -1496,6 +1559,16 @@
         ? `<button type="button" class="sop-btn sop-btn-ghost sop-btn-sm sop-zip-job-close" data-zip-local="${escapeHtml(localId)}">Cerrar</button>`
         : '';
       const acciones = `${dlBtn}${cancelBtn}${closeBtn}`;
+      const logCount = Array.isArray(j.log) ? j.log.length : 0;
+      const logBlock = logCount
+        ? `<div class="sop-zip-job-log-wrap">
+            <div class="sop-zip-job-log-toolbar">
+              <button type="button" class="sop-btn sop-btn-ghost sop-btn-sm sop-zip-job-log-toggle" data-zip-local="${escapeHtml(localId)}">${j.showLog ? 'Ocultar log' : `Ver log (${logCount})`}</button>
+              ${j.showLog ? `<button type="button" class="sop-btn sop-btn-ghost sop-btn-sm sop-zip-job-log-copy" data-zip-local="${escapeHtml(localId)}" title="Copiar log">Copiar</button>` : ''}
+            </div>
+            ${j.showLog ? `<pre class="sop-zip-job-log" tabindex="0">${escapeHtml((j.log || []).join('\n'))}</pre>` : ''}
+          </div>`
+        : '';
       return `<li class="sop-zip-job-item${err ? ' is-error' : ''}${done ? ' is-done' : ''}${cancelado ? ' is-cancelled' : ''}${queued ? ' is-queued' : ''}${running ? ' is-running' : ''}" data-zip-local="${escapeHtml(localId)}">
         <div class="sop-zip-job-row">
           <span class="sop-zip-job-name">${escapeHtml(j.label || j.filename || 'ZIP')}</span>
@@ -1503,6 +1576,7 @@
         </div>
         <div class="sop-zip-job-bar-wrap" aria-hidden="true"><div class="sop-zip-job-bar" style="width:${pct}%"></div></div>
         <div class="sop-zip-job-status">${escapeHtml(j.message || '')}</div>
+        ${logBlock}
         ${acciones ? `<div class="sop-zip-job-actions">${acciones}</div>` : ''}
       </li>`;
     }).join('');
@@ -1566,6 +1640,24 @@
         sopZipBgRender();
         return;
       }
+      const logToggle = ev.target.closest('.sop-zip-job-log-toggle');
+      if (logToggle) {
+        const j = sopZipBg.jobs.get(logToggle.dataset.zipLocal);
+        if (j) {
+          j.showLog = !j.showLog;
+          sopZipBgRender();
+        }
+        return;
+      }
+      const logCopy = ev.target.closest('.sop-zip-job-log-copy');
+      if (logCopy) {
+        const j = sopZipBg.jobs.get(logCopy.dataset.zipLocal);
+        const text = (j?.log || []).join('\n');
+        if (text && navigator.clipboard?.writeText) {
+          void navigator.clipboard.writeText(text).then(() => sopToast('Log copiado', 'success')).catch(() => sopToast('No se pudo copiar', 'error'));
+        }
+        return;
+      }
       const btn = ev.target.closest('.sop-zip-job-dl');
       if (!btn) return;
       const localId = btn.dataset.zipLocal;
@@ -1623,8 +1715,20 @@
     if (!j?.apiJobId) return;
     if (j.status === 'cancelled') return;
     try {
-      const stRes = await apiFetch(`/api/soportes/armado/zip/job/${j.apiJobId}`);
+      const pollUrl = `/api/soportes/armado/zip/job/${j.apiJobId}`;
+      const stRes = await apiFetch(pollUrl);
       const st = await stRes.json().catch(() => ({}));
+      const pollSnap = `${st.status}|${st.progress}|${st.message || ''}|${st.error || ''}`;
+      if (j._pollSnap !== pollSnap) {
+        j._pollSnap = pollSnap;
+        sopZipJobLog(j, stRes.ok ? 'INFO' : 'WARN', 'Sondeo estado', {
+          http: stRes.status,
+          status: st.status,
+          progress: st.progress,
+          message: st.message,
+          error: st.error || null
+        });
+      }
       if (!stRes.ok) throw new Error(st.error || 'Error consultando progreso');
       j.progress = parseInt(st.progress, 10) || 0;
       j.message = st.message || j.message;
@@ -1650,6 +1754,8 @@
           j.status = 'ready';
           j.canDownload = true;
           j.message = `Error al descargar: ${e.message || 'error'} — pulse Descargar`;
+          j.showLog = true;
+          sopZipJobLog(j, 'ERROR', 'Auto-descarga tras ready falló', e.message);
           sopToast(e.message || 'No se pudo descargar el ZIP', 'error');
           sopZipBgRender();
         }
@@ -1672,9 +1778,10 @@
       sopZipBgStopPoll(localId);
       j.status = 'error';
       j.message = e.message || 'Error';
+      sopZipJobLog(j, 'ERROR', 'Sondeo falló', e.message);
       sopZipBgRender();
       sopToast(j.message, 'error');
-      sopZipBgRemoveLater(localId, 12000);
+      sopZipBgRemoveLater(localId, 30000);
     }
   }
 
@@ -1691,32 +1798,44 @@
       status: 'starting',
       message: 'Iniciando…',
       apiJobId: null,
-      pollTimer: null
+      pollTimer: null,
+      log: [],
+      showLog: false
     });
+    const j0 = sopZipBg.jobs.get(localId);
+    sopZipJobLog(j0, 'INFO', 'Solicitando generación ZIP', { apiPath, spec });
     sopZipBgRender();
     sopToast(`ZIP en segundo plano: ${label}`, 'info');
 
+    const startBody = {
+      kind: spec.kind,
+      periodo_id: spec.periodo_id,
+      dia_id: spec.dia_id,
+      contenedor_id: spec.contenedor_id,
+      expediente_id: spec.expediente_id
+    };
     const startRes = await apiFetch('/api/soportes/armado/zip/job', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        kind: spec.kind,
-        periodo_id: spec.periodo_id,
-        dia_id: spec.dia_id,
-        contenedor_id: spec.contenedor_id,
-        expediente_id: spec.expediente_id
-      })
+      body: JSON.stringify(startBody)
     });
     const startData = await startRes.json().catch(() => ({}));
+    sopZipJobLog(j0, startRes.ok ? 'INFO' : 'ERROR', 'Respuesta inicio job', {
+      http: startRes.status,
+      body: startData
+    });
     if (!startRes.ok || !startData.job_id) {
-      sopZipBg.jobs.delete(localId);
+      j0.status = 'error';
+      j0.message = startData.error || 'No se pudo iniciar la generación del ZIP';
+      j0.showLog = true;
       sopZipBgRender();
-      throw new Error(startData.error || 'No se pudo iniciar la generación del ZIP');
+      throw new Error(j0.message);
     }
 
     const j = sopZipBg.jobs.get(localId);
     if (!j) return;
     j.apiJobId = startData.job_id;
+    sopZipJobLog(j, 'INFO', 'Job registrado en servidor', { job_id: j.apiJobId });
     // Se canceló mientras arrancaba: recién ahora hay id que cancelar en el servidor.
     if (j.cancelPendiente) {
       j.cancelPendiente = false;

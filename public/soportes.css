@@ -1271,8 +1271,8 @@
   right: 20px;
   bottom: 88px;
   z-index: 10115;
-  width: min(380px, calc(100vw - 32px));
-  max-height: min(280px, 40vh);
+  width: min(420px, calc(100vw - 32px));
+  max-height: min(420px, 55vh);
   padding: 12px 14px;
   border-radius: 12px;
   border: 1px solid #cbd5e1;
@@ -1335,8 +1335,32 @@
   display: flex;
   flex-direction: column;
   gap: 10px;
-  max-height: min(220px, 32vh);
+  max-height: min(360px, 48vh);
   overflow-y: auto;
+}
+.sop-zip-job-log-wrap {
+  margin-top: 6px;
+}
+.sop-zip-job-log-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-bottom: 4px;
+}
+.sop-zip-job-log {
+  margin: 0;
+  padding: 8px;
+  max-height: 140px;
+  overflow: auto;
+  font-size: 0.68rem;
+  line-height: 1.35;
+  font-family: ui-monospace, Consolas, monospace;
+  background: #0f172a;
+  color: #e2e8f0;
+  border-radius: 6px;
+  white-space: pre-wrap;
+  word-break: break-word;
+  user-select: text;
 }
 .sop-zip-job-item {
   padding: 8px 10px;
