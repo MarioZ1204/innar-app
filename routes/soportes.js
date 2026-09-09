@@ -3120,28 +3120,17 @@ router.get('/soportes/armado/dias/:id/contenedores', requireAuth, requireRoleOrP
         contenedores: []
       });
     }
-    const { isUploadsWritable } = require('../config/uploads-path');
-    const uploadsCheck = isUploadsWritable();
-    let storageWarning = null;
-    if (!uploadsCheck.writableForArmado) {
-      storageWarning = uploadsCheck.error
-        ? `Almacenamiento limitado: ${uploadsCheck.error}`
-        : 'No se puede crear carpetas en soportes/armado; revise permisos en Hostinger.';
-      logger.warn('[SOPORTES] armado no escribible al listar día:', uploadsCheck.path, uploadsCheck.error || '');
-    }
+    // Listado ligero: solo BD. El sync RIPS en disco es manual (POST sync-rips-carpetas)
+    // para no saturar MySQL en hosting compartido al abrir cada carpeta de día.
     let contenedores = [];
-    try {
+    const existentes = await db.query(
+      'SELECT id FROM sop_contenedores WHERE dia_id = ? LIMIT 1',
+      [req.params.id]
+    );
+    if (!existentes.length) {
       await ensureContenedoresForDia(db, req.params.id);
-      if (esModoFacturacion(modo) && uploadsCheck.writableForArmado) {
-        await syncRipsCarpetasDia(db, req.params.id, req.session?.usuarioId);
-      }
-      contenedores = await queryContenedoresArmadoPorDia(req.params.id);
-    } catch (prepErr) {
-      if (!isDiskIoError(prepErr)) throw prepErr;
-      logger.warn('[SOPORTES] fallo de disco al preparar día, listando desde BD:', prepErr.message);
-      contenedores = await queryContenedoresArmadoPorDia(req.params.id);
-      if (!storageWarning) storageWarning = `Carpetas en disco no disponibles (${prepErr.message})`;
     }
+    contenedores = await queryContenedoresArmadoPorDia(req.params.id);
     let ucqn_expediente_id = null;
     if (esModoUcqn(modo)) {
       const exp = await db.query(
@@ -3159,8 +3148,7 @@ router.get('/soportes/armado/dias/:id/contenedores', requireAuth, requireRoleOrP
       dia: mapDia({ ...dia[0], expedientes_count: contenedores.reduce((s, c) => s + (c.expedientes_count || 0), 0) }),
       modo,
       ucqn_expediente_id,
-      contenedores: contenedores.map(mapContenedor),
-      storage_warning: storageWarning
+      contenedores: contenedores.map(mapContenedor)
     });
   } catch (e) {
     logger.error('[SOPORTES] GET dia contenedores', {

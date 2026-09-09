@@ -5673,8 +5673,17 @@
     armState.diaFacturacion = diaRow?.estado_facturacion || 'a_facturar';
     const panel = $('sopArmExpedientePanel');
     panel.innerHTML = `<div class="sop-panel-body"><div class="sop-empty"><i data-lucide="loader"></i></div></div>`;
-    const res = await apiFetch(`/api/soportes/armado/dias/${id}/contenedores`);
-    const data = await res.json();
+    let res;
+    let data;
+    for (let intento = 0; intento < 3; intento++) {
+      res = await apiFetch(`/api/soportes/armado/dias/${id}/contenedores`);
+      data = await res.json();
+      if (res.ok) break;
+      const errMsg = String(data.error || '');
+      const esDbTransitorio = /conexión con la base de datos|3306|ECONNRESET|Too many connections/i.test(errMsg);
+      if (!esDbTransitorio || intento >= 2) break;
+      await new Promise((r) => setTimeout(r, 400 * (intento + 1)));
+    }
     if (!res.ok) { sopToast(data.error || 'Error', 'error'); return; }
     if (data.storage_warning) sopToast(data.storage_warning, 'warning');
     armState.diaModo = data.modo || armState.diaModo;

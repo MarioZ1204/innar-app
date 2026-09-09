@@ -4,12 +4,17 @@ const mysql = require('mysql2/promise');
 
 let pool = null;
 
-const DB_QUERY_RETRIES = parseInt(process.env.DB_QUERY_RETRIES || '3', 10) || 3;
+const DB_QUERY_RETRIES = parseInt(
+  process.env.DB_QUERY_RETRIES || (process.env.NODE_ENV === 'production' ? '5' : '3'),
+  10
+) || 3;
+const DB_RETRY_BASE_MS = parseInt(process.env.DB_RETRY_BASE_MS || '150', 10) || 150;
 const TRANSIENT_DB_CODES = new Set([
   'ECONNRESET',
   'ECONNREFUSED',
   'ETIMEDOUT',
   'EPIPE',
+  'EPERM',
   'PROTOCOL_CONNECTION_LOST',
   'PROTOCOL_ENQUEUE_AFTER_FATAL_ERROR',
   'PROTOCOL_ENQUEUE_AFTER_QUIT'
@@ -43,24 +48,38 @@ function sleepMs(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+function retryDelayMs(attempt) {
+  return DB_RETRY_BASE_MS * (attempt + 1);
+}
+
+async function getPooledConnection() {
+  let lastErr;
+  for (let attempt = 0; attempt < DB_QUERY_RETRIES; attempt++) {
+    try {
+      return await pool.getConnection();
+    } catch (err) {
+      lastErr = err;
+      if (!isTransientDbError(err) || attempt >= DB_QUERY_RETRIES - 1) throw err;
+      await sleepMs(retryDelayMs(attempt));
+    }
+  }
+  throw lastErr;
+}
+
 async function withPooledConnection(op, run) {
   assertPool(op);
   let lastErr;
   for (let attempt = 0; attempt < DB_QUERY_RETRIES; attempt++) {
-    const connection = await pool.getConnection();
-    let released = false;
+    const connection = await getPooledConnection();
     try {
       const result = await run(connection);
       connection.release();
-      released = true;
       return result;
     } catch (err) {
       lastErr = err;
-      if (!released) {
-        try { connection.destroy(); } catch (_) { /* ignore */ }
-      }
+      try { connection.destroy(); } catch (_) { /* ignore */ }
       if (!isTransientDbError(err) || attempt >= DB_QUERY_RETRIES - 1) throw err;
-      await sleepMs(80 * (attempt + 1));
+      await sleepMs(retryDelayMs(attempt));
     }
   }
   throw lastErr;
@@ -70,6 +89,9 @@ async function withPooledConnection(op, run) {
 async function initPool() {
   if (pool) return pool;
   
+  const defaultPoolLimit = process.env.NODE_ENV === 'production' ? 8 : 20;
+  const connectionLimit = parseInt(process.env.DB_POOL_LIMIT || String(defaultPoolLimit), 10) || defaultPoolLimit;
+
   pool = await mysql.createPool({
     host: process.env.DB_HOST || 'localhost',
     port: parseInt(process.env.DB_PORT) || 3306,
@@ -77,8 +99,8 @@ async function initPool() {
     password: process.env.DB_PASSWORD || '',
     database: process.env.DB_NAME || 'innar_clinica',
     waitForConnections: true,
-    connectionLimit: 20,
-    queueLimit: 100,
+    connectionLimit,
+    queueLimit: parseInt(process.env.DB_POOL_QUEUE_LIMIT || '50', 10) || 50,
     enableKeepAlive: true,
     keepAliveInitialDelay: 10000,
     charset: 'utf8mb4',
@@ -91,7 +113,7 @@ async function initPool() {
     connection.query("SET time_zone = ?", [process.env.DB_TIMEZONE || '-05:00'], () => {});
   });
 
-  console.log(`✓ Pool MySQL conectado: ${process.env.DB_HOST}:${process.env.DB_PORT}`);
+  console.log(`✓ Pool MySQL conectado: ${process.env.DB_HOST}:${process.env.DB_PORT} (límite ${connectionLimit})`);
   return pool;
 }
 
@@ -139,7 +161,7 @@ function prepare(sql) {
  */
 async function transaction(callback) {
   assertPool('transaction');
-  const connection = await pool.getConnection();
+  const connection = await getPooledConnection();
   await connection.beginTransaction();
   try {
     const result = await callback({

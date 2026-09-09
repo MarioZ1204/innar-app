@@ -22,6 +22,7 @@ function buildSessionStore() {
       user: process.env.DB_USER,
       password: process.env.DB_PASSWORD || '',
       database: process.env.DB_NAME,
+      connectionLimit: parseInt(process.env.DB_SESSION_POOL_LIMIT || '3', 10) || 3,
       createDatabaseTable: true,
       schema: {
         tableName: 'app_sessions',
