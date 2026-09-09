@@ -632,11 +632,27 @@ function pdxInsertId(result) {
 }
 
 function isMysqlError(e) {
-  const code = String(e?.code || '');
-  return code.startsWith('ER_') || !!e?.sqlState;
+  return db.isSqlError(e) || db.isDbConnectionError(e);
+}
+
+function isDiskIoError(e) {
+  if (!e || isMysqlError(e)) return false;
+  const code = String(e.code || '');
+  const msg = String(e.message || '');
+  if (code === 'ENSURE_DIR_FAILED' || code === 'EROFS' || code === 'ENOSPC') return true;
+  if (code === 'EACCES') return true;
+  if (/No se pudo crear directorio/i.test(msg)) return true;
+  if (code === 'EPERM' && /3306|connect/i.test(msg)) return false;
+  if (code === 'EPERM') {
+    return /directorio|mkdir|UPLOADS|private_uploads|soportes/i.test(msg);
+  }
+  return false;
 }
 
 function sopErrorCliente(e, fallback = 'Error interno del servidor') {
+  if (db.isDbConnectionError(e)) {
+    return 'Error de conexión con la base de datos. Espere unos segundos e intente de nuevo. Si persiste, reinicie Node en Hostinger.';
+  }
   if (e.code === 'ER_NO_SUCH_TABLE') {
     return 'Módulo Soportes no inicializado en la base de datos. Reinicie la aplicación (migraciones al arranque).';
   }
@@ -649,7 +665,7 @@ function sopErrorCliente(e, fallback = 'Error interno del servidor') {
   if (e.code === 'ER_DUP_ENTRY') {
     return 'Ya existe un registro con los mismos datos en esta carpeta.';
   }
-  if (e.code === 'ENSURE_DIR_FAILED' || e.code === 'EACCES' || e.code === 'EPERM' || e.code === 'EROFS') {
+  if (isDiskIoError(e)) {
     const { checkUploadsWritable } = require('../config/uploads-path');
     const uploads = checkUploadsWritable();
     const failedPath = String(e?.message || '').replace(/^No se pudo crear directorio:\s*/i, '').trim();
@@ -3121,10 +3137,10 @@ router.get('/soportes/armado/dias/:id/contenedores', requireAuth, requireRoleOrP
       }
       contenedores = await queryContenedoresArmadoPorDia(req.params.id);
     } catch (prepErr) {
-      if (isMysqlError(prepErr)) throw prepErr;
-      logger.warn('[SOPORTES] fallo no crítico al preparar día, listando desde BD:', prepErr.message);
+      if (!isDiskIoError(prepErr)) throw prepErr;
+      logger.warn('[SOPORTES] fallo de disco al preparar día, listando desde BD:', prepErr.message);
       contenedores = await queryContenedoresArmadoPorDia(req.params.id);
-      if (!storageWarning) storageWarning = `Listado desde base de datos (${prepErr.message})`;
+      if (!storageWarning) storageWarning = `Carpetas en disco no disponibles (${prepErr.message})`;
     }
     let ucqn_expediente_id = null;
     if (esModoUcqn(modo)) {

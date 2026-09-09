@@ -20,7 +20,23 @@ function isTransientDbError(err) {
   if (TRANSIENT_DB_CODES.has(err.code)) return true;
   if (err.fatal) return true;
   const msg = String(err.message || '');
-  return /ECONNRESET|Connection lost|server has gone away/i.test(msg);
+  if (/ECONNRESET|Connection lost|server has gone away|Too many connections/i.test(msg)) return true;
+  if (err.code === 'EPERM' && /3306|connect/i.test(msg)) return true;
+  return false;
+}
+
+function isSqlError(err) {
+  if (!err) return false;
+  const code = String(err.code || '');
+  return code.startsWith('ER_') || !!err.sqlState;
+}
+
+/** Error de red/pool al conectar a MySQL (no confundir con EPERM de disco). */
+function isDbConnectionError(err) {
+  if (!err || isSqlError(err)) return false;
+  if (isTransientDbError(err)) return true;
+  const msg = String(err.message || '');
+  return /3306|mysql|Connection lost|server has gone away|Too many connections/i.test(msg);
 }
 
 function sleepMs(ms) {
@@ -162,5 +178,8 @@ module.exports = {
   prepare,
   transaction,
   closePool,
-  getPool: () => pool
+  getPool: () => pool,
+  isTransientDbError,
+  isSqlError,
+  isDbConnectionError
 };
