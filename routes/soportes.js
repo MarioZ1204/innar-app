@@ -645,10 +645,13 @@ function sopErrorCliente(e, fallback = 'Error interno del servidor') {
     return 'Ya existe un registro con los mismos datos en esta carpeta.';
   }
   if (e.code === 'ENSURE_DIR_FAILED' || e.code === 'EACCES' || e.code === 'EPERM' || e.code === 'EROFS') {
-    const { resolveUploadsRoot } = require('../config/uploads-path');
-    const uploadsPath = resolveUploadsRoot();
+    const { checkUploadsWritable } = require('../config/uploads-path');
+    const uploads = checkUploadsWritable();
+    if (uploads.exists && !uploads.writable) {
+      return `Sin permiso de escritura en ${uploads.path}. La ruta UPLOADS_DIR es correcta; en Hostinger (Administrador de archivos) asigne permisos 755 o 775 a private_uploads y private_uploads/soportes, luego reinicie Node.`;
+    }
     const envHint = process.env.UPLOADS_DIR ? '' : ' (UPLOADS_DIR no está definido; usa public/uploads dentro del repo)';
-    return `Sin permiso de escritura en ${uploadsPath}${envHint}. En Hostinger defina UPLOADS_DIR con una ruta absoluta fuera del repositorio, cree la carpeta y reinicie Node.`;
+    return `No se pudo usar la carpeta de archivos ${uploads.path}${envHint}. Créela en Hostinger, asigne permisos de escritura y reinicie Node.`;
   }
   if (process.env.NODE_ENV === 'production') {
     const msg = String(e?.message || '').split('\n')[0].slice(0, 160);
@@ -3089,10 +3092,19 @@ router.get('/soportes/armado/dias/:id/contenedores', requireAuth, requireRoleOrP
         contenedores: []
       });
     }
+    const { isUploadsWritable } = require('../config/uploads-path');
+    const uploadsCheck = isUploadsWritable();
+    let storageWarning = null;
+    if (!uploadsCheck.writable) {
+      storageWarning = uploadsCheck.error
+        ? `Almacenamiento no escribible: ${uploadsCheck.error}`
+        : 'Almacenamiento no escribible; revise permisos de private_uploads en Hostinger.';
+      logger.warn('[SOPORTES] UPLOADS_DIR no escribible al listar día:', uploadsCheck.path, uploadsCheck.error || '');
+    }
     let contenedores = [];
     try {
       await ensureContenedoresForDia(db, req.params.id);
-      if (esModoFacturacion(modo)) {
+      if (esModoFacturacion(modo) && uploadsCheck.writable) {
         await syncRipsCarpetasDia(db, req.params.id, req.session?.usuarioId);
       }
       contenedores = await queryContenedoresArmadoPorDia(req.params.id);
@@ -3122,7 +3134,8 @@ router.get('/soportes/armado/dias/:id/contenedores', requireAuth, requireRoleOrP
       dia: mapDia({ ...dia[0], expedientes_count: contenedores.reduce((s, c) => s + (c.expedientes_count || 0), 0) }),
       modo,
       ucqn_expediente_id,
-      contenedores: contenedores.map(mapContenedor)
+      contenedores: contenedores.map(mapContenedor),
+      storage_warning: storageWarning
     });
   } catch (e) {
     logger.error('[SOPORTES] GET dia contenedores', {
@@ -3335,7 +3348,11 @@ async function crearExpedienteEnContenedor(contenedorId, body, usuarioId) {
   // futuros cambios de código/factura NUNCA requieran renombrar disco.
   const carpetaFisica = calcularCarpetaFisica(codigo, expId);
   await db.execute('UPDATE sop_expedientes SET carpeta_fisica = ? WHERE id = ?', [carpetaFisica, expId]);
-  getArmadoFeDirFromContext(ctx, carpetaFisica);
+  try {
+    getArmadoFeDirFromContext(ctx, carpetaFisica);
+  } catch (diskErr) {
+    logger.warn('[SOPORTES] carpeta FE en disco:', diskErr.message);
+  }
 
   try {
     if (esModoFacturacion(diaModo)) {

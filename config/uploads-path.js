@@ -37,6 +37,10 @@ function getSoportesRoot() {
   return dir;
 }
 
+let uploadsWritableCache = null;
+let uploadsWritableCacheAt = 0;
+const UPLOADS_WRITABLE_CACHE_MS = 30000;
+
 /** Comprueba si UPLOADS_DIR existe y permite escribir (para diagnóstico en producción). */
 function checkUploadsWritable() {
   const root = resolveUploadsRoot();
@@ -58,6 +62,17 @@ function checkUploadsWritable() {
   return result;
 }
 
+/** Resultado cacheado (30 s) para no probar disco en cada petición de listado. */
+function isUploadsWritable() {
+  const now = Date.now();
+  if (uploadsWritableCache && now - uploadsWritableCacheAt < UPLOADS_WRITABLE_CACHE_MS) {
+    return uploadsWritableCache;
+  }
+  uploadsWritableCache = checkUploadsWritable();
+  uploadsWritableCacheAt = now;
+  return uploadsWritableCache;
+}
+
 function isInsideUploadsRoot(fullPath) {
   const root = path.resolve(getUploadsRoot());
   const full = path.resolve(fullPath);
@@ -70,5 +85,6 @@ module.exports = {
   getSoportesRoot,
   isInsideUploadsRoot,
   checkUploadsWritable,
+  isUploadsWritable,
   tryMkdir
 };

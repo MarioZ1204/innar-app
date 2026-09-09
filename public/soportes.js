@@ -5676,6 +5676,7 @@
     const res = await apiFetch(`/api/soportes/armado/dias/${id}/contenedores`);
     const data = await res.json();
     if (!res.ok) { sopToast(data.error || 'Error', 'error'); return; }
+    if (data.storage_warning) sopToast(data.storage_warning, 'warning');
     armState.diaModo = data.modo || armState.diaModo;
     if (data.modo === 'anexo_fidu') {
       renderAnexoDiaPanel(diaRow, data.anexo);

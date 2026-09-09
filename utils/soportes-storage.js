@@ -45,7 +45,7 @@ function getArmadoExpedienteDir(periodo, dia, codigo) {
   return dir;
 }
 
-function getArmadoFeDirFromContext(ctx, codigo) {
+function getArmadoFeDirFromContext(ctx, codigo, opts = {}) {
   const { getArmadoFeDirAbs } = require('./soportes-armado-structure');
   const periodoRuta = ctx.periodo_etiqueta || ctx.etiqueta || ctx.periodo || '';
   return getArmadoFeDirAbs(
@@ -54,7 +54,8 @@ function getArmadoFeDirFromContext(ctx, codigo) {
     ctx.nombre_display || `Día ${ctx.dia}`,
     ctx.estado_facturacion || 'a_facturar',
     ctx.contenedor_tipo || ctx.tipo || 'soportes',
-    codigo
+    codigo,
+    opts
   );
 }
 

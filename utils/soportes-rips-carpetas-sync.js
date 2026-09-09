@@ -52,7 +52,8 @@ async function ensureRipsCarpetaFacturaEnDisco(db, diaId, codigoFactura) {
       row.nombre_display,
       row.estado_facturacion,
       'rips',
-      codigoFactura
+      codigoFactura,
+      { ensure: false }
     );
     ensureDirectorioVacio(abs);
     return abs;

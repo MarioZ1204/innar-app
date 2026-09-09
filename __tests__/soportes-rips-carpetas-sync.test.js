@@ -62,7 +62,7 @@ describe('ensureRipsCarpetaFacturaEnDisco', () => {
 
     await ensureRipsCarpetaFacturaEnDisco(db, 77, 'FE12');
 
-    expect(getArmadoFeDirAbs).toHaveBeenCalledWith(expect.anything(), 'JUNIO 2026', 'JUNIO 1', 'a_facturar', 'rips', 'FE12');
+    expect(getArmadoFeDirAbs).toHaveBeenCalledWith(expect.anything(), 'JUNIO 2026', 'JUNIO 1', 'a_facturar', 'rips', 'FE12', { ensure: false });
   });
 
   test('crea la carpeta espejo cruzada en RIPS usando etiqueta de periodo', async () => {
@@ -88,7 +88,7 @@ describe('ensureRipsCarpetaFacturaEnDisco', () => {
 
     await ensureFeParEnContenedorHermano(db, 77, 12, 'FE12', 12, 'electro', 5, 'Ana');
 
-    expect(getArmadoFeDirAbs).toHaveBeenCalledWith(expect.anything(), 'JUNIO 2026', 'JUNIO 1', 'a_facturar', 'rips', 'FE12');
+    expect(getArmadoFeDirAbs).toHaveBeenCalledWith(expect.anything(), 'JUNIO 2026', 'JUNIO 1', 'a_facturar', 'rips', 'FE12', { ensure: false });
     expect(db.execute).toHaveBeenCalledWith(expect.stringContaining('INSERT INTO sop_expedientes'), expect.any(Array));
   });
 

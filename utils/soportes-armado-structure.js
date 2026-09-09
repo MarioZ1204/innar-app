@@ -34,13 +34,13 @@ function getArmadoContenedorBaseDir(periodo, diaNombre, estadoFacturacion, tipoC
   return base;
 }
 
-function getArmadoFeDirAbs(root, periodo, diaNombre, estadoFacturacion, tipoContenedor, codigo) {
+function getArmadoFeDirAbs(root, periodo, diaNombre, estadoFacturacion, tipoContenedor, codigo, opts = {}) {
   const rel = path.join(
     getArmadoContenedorBaseDir(periodo, diaNombre, estadoFacturacion, tipoContenedor),
     String(codigo || 'FE0')
   );
   const abs = path.join(root, rel);
-  ensureDir(abs);
+  if (opts.ensure !== false) ensureDir(abs);
   return { abs, rel: rel.replace(/\\/g, '/') };
 }
 
