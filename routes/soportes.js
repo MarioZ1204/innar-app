@@ -647,6 +647,11 @@ function sopErrorCliente(e, fallback = 'Error interno del servidor') {
   if (e.code === 'ENSURE_DIR_FAILED' || e.code === 'EACCES' || e.code === 'EPERM') {
     return 'Sin permiso de escritura en la carpeta de archivos (revise UPLOADS_DIR en el servidor).';
   }
+  if (process.env.NODE_ENV === 'production') {
+    const msg = String(e?.message || '').split('\n')[0].slice(0, 160);
+    if (msg && !/syntax|sql|select|insert|update|delete/i.test(msg)) return msg;
+    return fallback;
+  }
   return safeError(e) || fallback;
 }
 
@@ -3110,8 +3115,12 @@ router.get('/soportes/armado/dias/:id/contenedores', requireAuth, requireRoleOrP
       contenedores: contenedores.map(mapContenedor)
     });
   } catch (e) {
-    logger.error('[SOPORTES] GET dia contenedores:', e.message, { diaId: req.params.id });
-    res.status(500).json({ error: safeError(e) });
+    logger.error('[SOPORTES] GET dia contenedores', {
+      diaId: req.params.id,
+      code: e.code || null,
+      message: e.message || String(e)
+    });
+    res.status(500).json({ error: sopErrorCliente(e) });
   }
 });
 
