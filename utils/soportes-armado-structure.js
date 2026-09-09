@@ -126,15 +126,20 @@ async function ensureFeParEnContenedorHermano(db, diaId, contenedorId, codigo, n
     const carpetaFisica = calcularCarpetaFisica(codigo, hermanoId);
     await db.execute('UPDATE sop_expedientes SET carpeta_fisica = ? WHERE id = ?', [carpetaFisica, hermanoId]);
     const row = ctx[0];
-    const sopStorage = require('./soportes-storage');
-    getArmadoFeDirAbs(
-      sopStorage.soportesRoot,
-      row.periodo_etiqueta || row.periodo || '',
-      row.nombre_display,
-      row.estado_facturacion,
-      row.contenedor_tipo,
-      carpetaFisica
-    );
+    try {
+      const sopStorage = require('./soportes-storage');
+      getArmadoFeDirAbs(
+        sopStorage.soportesRoot,
+        row.periodo_etiqueta || row.periodo || '',
+        row.nombre_display,
+        row.estado_facturacion,
+        row.contenedor_tipo,
+        carpetaFisica
+      );
+    } catch (diskErr) {
+      const logger = require('./logger');
+      logger.warn('[SOPORTES] carpeta FE hermano disco:', diskErr.message);
+    }
   }
 
   return hermanoId;

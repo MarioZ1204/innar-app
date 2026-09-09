@@ -16,20 +16,46 @@ function resolveUploadsRoot() {
   return path.resolve(__dirname, '..', 'public', 'uploads');
 }
 
+function tryMkdir(dir) {
+  try {
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+    return true;
+  } catch (_) {
+    return false;
+  }
+}
+
 function getUploadsRoot() {
   const root = resolveUploadsRoot();
-  if (!fs.existsSync(root)) {
-    fs.mkdirSync(root, { recursive: true });
-  }
+  tryMkdir(root);
   return root;
 }
 
 function getSoportesRoot() {
   const dir = path.join(getUploadsRoot(), 'soportes');
-  if (!fs.existsSync(dir)) {
-    fs.mkdirSync(dir, { recursive: true });
-  }
+  tryMkdir(dir);
   return dir;
+}
+
+/** Comprueba si UPLOADS_DIR existe y permite escribir (para diagnóstico en producción). */
+function checkUploadsWritable() {
+  const root = resolveUploadsRoot();
+  const result = { path: root, exists: fs.existsSync(root), writable: false, error: null };
+  try {
+    if (!result.exists) tryMkdir(root);
+    result.exists = fs.existsSync(root);
+    if (!result.exists) {
+      result.error = 'La carpeta no existe y no se pudo crear';
+      return result;
+    }
+    const testFile = path.join(root, `.write_test_${process.pid}`);
+    fs.writeFileSync(testFile, 'ok');
+    fs.unlinkSync(testFile);
+    result.writable = true;
+  } catch (e) {
+    result.error = e.message || String(e);
+  }
+  return result;
 }
 
 function isInsideUploadsRoot(fullPath) {
@@ -42,5 +68,7 @@ module.exports = {
   resolveUploadsRoot,
   getUploadsRoot,
   getSoportesRoot,
-  isInsideUploadsRoot
+  isInsideUploadsRoot,
+  checkUploadsWritable,
+  tryMkdir
 };

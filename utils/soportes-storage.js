@@ -222,9 +222,14 @@ function relativePdxRuta(carpetaId, diskBasename) {
   return path.join('soportes', 'pdx', String(carpetaId), diskBasename).replace(/\\/g, '/');
 }
 
-ensureDir(soportesRoot());
-ensureDir(path.join(soportesRoot(), 'pdx'));
-ensureDir(path.join(soportesRoot(), 'armado'));
+try {
+  ensureDir(soportesRoot());
+  ensureDir(path.join(soportesRoot(), 'pdx'));
+  ensureDir(path.join(soportesRoot(), 'armado'));
+} catch (e) {
+  const logger = require('./logger');
+  logger.warn('[SOPORTES] init storage dirs:', e.message);
+}
 
 module.exports = {
   get uploadsRoot() { return uploadsRoot(); },

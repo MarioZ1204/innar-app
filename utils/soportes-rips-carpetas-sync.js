@@ -95,25 +95,30 @@ async function syncRipsCarpetasExpedientes(db, { diaId, expedientes, usuarioId =
  */
 async function syncRipsCarpetasDia(db, diaId, usuarioId = null) {
   try {
-    await ensureContenedoresForDia(db, diaId);
+    try {
+      await ensureContenedoresForDia(db, diaId);
+    } catch (e) {
+      logger.warn('[SOPORTES] sync RIPS contenedores:', e.message);
+      return [];
+    }
+    let soportes = [];
+    try {
+      soportes = await db.query(
+        `SELECT e.*, c.id AS contenedor_id
+         FROM sop_expedientes e
+         JOIN sop_contenedores c ON c.id = e.contenedor_id AND c.tipo = 'soportes'
+         WHERE e.dia_id = ?`,
+        [diaId]
+      );
+    } catch (e) {
+      logger.warn('[SOPORTES] sync RIPS query:', e.message);
+      return [];
+    }
+    return await syncRipsCarpetasExpedientes(db, { diaId, expedientes: soportes, usuarioId });
   } catch (e) {
-    logger.warn('[SOPORTES] sync RIPS contenedores:', e.message);
+    logger.warn('[SOPORTES] sync RIPS dia:', e.message);
     return [];
   }
-  let soportes = [];
-  try {
-    soportes = await db.query(
-      `SELECT e.*, c.id AS contenedor_id
-       FROM sop_expedientes e
-       JOIN sop_contenedores c ON c.id = e.contenedor_id AND c.tipo = 'soportes'
-       WHERE e.dia_id = ?`,
-      [diaId]
-    );
-  } catch (e) {
-    logger.warn('[SOPORTES] sync RIPS query:', e.message);
-    return [];
-  }
-  return syncRipsCarpetasExpedientes(db, { diaId, expedientes: soportes, usuarioId });
 }
 
 async function syncRipsCarpetasContenedor(db, contenedorId, usuarioId = null) {

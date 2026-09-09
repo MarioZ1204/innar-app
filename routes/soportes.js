@@ -644,8 +644,11 @@ function sopErrorCliente(e, fallback = 'Error interno del servidor') {
   if (e.code === 'ER_DUP_ENTRY') {
     return 'Ya existe un registro con los mismos datos en esta carpeta.';
   }
-  if (e.code === 'ENSURE_DIR_FAILED' || e.code === 'EACCES' || e.code === 'EPERM') {
-    return 'Sin permiso de escritura en la carpeta de archivos (revise UPLOADS_DIR en el servidor).';
+  if (e.code === 'ENSURE_DIR_FAILED' || e.code === 'EACCES' || e.code === 'EPERM' || e.code === 'EROFS') {
+    const { resolveUploadsRoot } = require('../config/uploads-path');
+    const uploadsPath = resolveUploadsRoot();
+    const envHint = process.env.UPLOADS_DIR ? '' : ' (UPLOADS_DIR no está definido; usa public/uploads dentro del repo)';
+    return `Sin permiso de escritura en ${uploadsPath}${envHint}. En Hostinger defina UPLOADS_DIR con una ruta absoluta fuera del repositorio, cree la carpeta y reinicie Node.`;
   }
   if (process.env.NODE_ENV === 'production') {
     const msg = String(e?.message || '').split('\n')[0].slice(0, 160);
@@ -3086,15 +3089,22 @@ router.get('/soportes/armado/dias/:id/contenedores', requireAuth, requireRoleOrP
         contenedores: []
       });
     }
-    await ensureContenedoresForDia(db, req.params.id);
-    if (esModoFacturacion(modo)) {
-      try {
+    let contenedores = [];
+    try {
+      await ensureContenedoresForDia(db, req.params.id);
+      if (esModoFacturacion(modo)) {
         await syncRipsCarpetasDia(db, req.params.id, req.session?.usuarioId);
-      } catch (syncErr) {
-        logger.warn('[SOPORTES] sync RIPS carpetas:', syncErr.message);
+      }
+      contenedores = await queryContenedoresArmadoPorDia(req.params.id);
+    } catch (diskOrListErr) {
+      const diskCodes = new Set(['ENSURE_DIR_FAILED', 'EACCES', 'EPERM', 'EROFS']);
+      if (diskCodes.has(diskOrListErr.code)) {
+        logger.warn('[SOPORTES] disco no escribible al abrir día, listando desde BD:', diskOrListErr.message);
+        contenedores = await queryContenedoresArmadoPorDia(req.params.id);
+      } else {
+        throw diskOrListErr;
       }
     }
-    const contenedores = await queryContenedoresArmadoPorDia(req.params.id);
     let ucqn_expediente_id = null;
     if (esModoUcqn(modo)) {
       const exp = await db.query(
