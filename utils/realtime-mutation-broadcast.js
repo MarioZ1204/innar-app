@@ -94,16 +94,57 @@ function extraFromBody(body) {
   const did = body.doctor_id != null ? body.doctor_id : body.doctorId;
   const n = parseInt(did, 10);
   if (Number.isFinite(n) && n > 0) out.doctor_id = n;
+
+  const archivoId = body.archivo_id != null ? body.archivo_id : body.archivoId;
+  const aid = parseInt(archivoId, 10);
+  if (Number.isFinite(aid) && aid > 0) out.archivo_id = aid;
+
+  const carpetaId = body.carpeta_id != null ? body.carpeta_id : body.carpetaId;
+  const cid = parseInt(carpetaId, 10);
+  if (Number.isFinite(cid) && cid > 0) out.carpeta_id = cid;
+
+  const reg = body.registro;
+  if (reg && typeof reg === 'object') {
+    const raid = parseInt(reg.archivo_id, 10);
+    if (Number.isFinite(raid) && raid > 0) out.archivo_id = raid;
+  }
+
+  const archivo = body.archivo;
+  if (archivo && typeof archivo === 'object') {
+    const arid = parseInt(archivo.id, 10);
+    if (Number.isFinite(arid) && arid > 0) out.archivo_id = arid;
+    const acid = parseInt(archivo.carpeta_id, 10);
+    if (Number.isFinite(acid) && acid > 0) out.carpeta_id = acid;
+  }
+
   return out;
 }
 
-function buildEventPayload(req, path) {
+function extraFromPath(path) {
+  const out = {};
+  const p = String(path || '');
+  const archivo = p.match(/\/anexo-fidu\/archivos\/(\d+)/i);
+  if (archivo) {
+    const id = parseInt(archivo[1], 10);
+    if (Number.isFinite(id) && id > 0) out.archivo_id = id;
+  }
+  const carpeta = p.match(/\/anexo-fidu\/carpetas\/(\d+)/i);
+  if (carpeta) {
+    const id = parseInt(carpeta[1], 10);
+    if (Number.isFinite(id) && id > 0) out.carpeta_id = id;
+  }
+  return out;
+}
+
+function buildEventPayload(req, path, responseBody) {
   const method = String(req.method || '').toUpperCase();
   return {
     modulo: inferModulo(path),
     method,
     path: String(path || '').slice(0, 120),
-    ...extraFromBody(req.body)
+    ...extraFromPath(path),
+    ...extraFromBody(req.body),
+    ...extraFromBody(responseBody)
   };
 }
 
@@ -127,7 +168,7 @@ function attachMutationBroadcast(app, emitFn) {
         emitted = true;
         try {
           if (shouldBroadcast(req, res, body)) {
-            emitFn('app:datos-actualizados', buildEventPayload(req, normalizeApiPath(req)));
+            emitFn('app:datos-actualizados', buildEventPayload(req, normalizeApiPath(req), body));
           }
         } catch (_) { /* noop */ }
       }

@@ -4,7 +4,8 @@ const {
   inferModulo,
   shouldSkipPath,
   isSuccessJson,
-  shouldBroadcast
+  shouldBroadcast,
+  buildEventPayload
 } = require('../utils/realtime-mutation-broadcast');
 
 describe('realtime-mutation-broadcast', () => {
@@ -33,6 +34,16 @@ describe('realtime-mutation-broadcast', () => {
     expect(isSuccessJson(200, { ok: true })).toBe(true);
     expect(isSuccessJson(400, { error: 'x' })).toBe(false);
     expect(isSuccessJson(200, { ok: false })).toBe(false);
+  });
+
+  test('buildEventPayload incluye archivo_id de ruta y respuesta', () => {
+    const payload = buildEventPayload(
+      { method: 'PUT', body: {} },
+      '/anexo-fidu/registros/42',
+      { ok: true, registro: { id: 42, archivo_id: 7 } }
+    );
+    expect(payload.modulo).toBe('anexo-fidu');
+    expect(payload.archivo_id).toBe(7);
   });
 
   test('shouldBroadcast solo en mutaciones exitosas de datos', () => {

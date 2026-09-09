@@ -181,7 +181,7 @@ function ordenarExpedientesFeLista(list) {
 }
 
 async function ensureContenedoresForDia(db, diaId) {
-  const rows = await db.query('SELECT modo FROM sop_dias WHERE id = ?', [diaId]);
+  const rows = await db.query('SELECT * FROM sop_dias WHERE id = ?', [diaId]);
   const modo = rows[0]?.modo || 'facturacion';
   const { ensureContenedoresForDiaModo } = require('./soportes-armado-modos');
   await ensureContenedoresForDiaModo(db, diaId, modo);

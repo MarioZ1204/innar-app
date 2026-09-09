@@ -605,29 +605,56 @@ router.post(
         return res.status(400).json({ error: 'No hay filas válidas en el Excel', errores: errores.slice(0, 20) });
       }
 
-      if (reemplazar) {
-        await db.execute('DELETE FROM anexo_fidu_registros WHERE archivo_id = ?', [archivoId]);
-      }
-
-      const cols = ['archivo_id', 'orden', ...ANEXO_FIDU_COLUMN_KEYS];
-      const placeholders = cols.map(() => '?').join(',');
-      const sql = `INSERT INTO anexo_fidu_registros (${cols.map((c) => `\`${c}\``).join(',')}) VALUES (${placeholders})`;
       let insertados = 0;
-      let orden = reemplazar ? 1 : await siguienteOrdenRegistro(archivoId);
-      for (const raw of registros) {
-        const data = sanitizeRegistroBody(raw);
-        try {
-          await db.execute(sql, [archivoId, orden, ...ANEXO_FIDU_COLUMN_KEYS.map((c) => data[c])]);
-        } catch (e) {
-          if (e.code !== 'ER_BAD_FIELD_ERROR') throw e;
-          await db.execute(
-            `INSERT INTO anexo_fidu_registros (\`archivo_id\`, ${ANEXO_FIDU_COLUMN_KEYS.map((c) => `\`${c}\``).join(',')}) VALUES (${['?', ...ANEXO_FIDU_COLUMN_KEYS.map(() => '?')].join(',')})`,
-            [archivoId, ...ANEXO_FIDU_COLUMN_KEYS.map((c) => data[c])]
-          );
+
+      if (reemplazar) {
+        const ordenInicial = 1;
+        const registrosSanitizados = registros.map((raw) => sanitizeRegistroBody(raw));
+        const cols = ['archivo_id', 'orden', ...ANEXO_FIDU_COLUMN_KEYS];
+        const placeholders = cols.map(() => '?').join(',');
+        const sql = `INSERT INTO anexo_fidu_registros (${cols.map((c) => `\`${c}\``).join(',')}) VALUES (${placeholders})`;
+        const sqlFallback = `INSERT INTO anexo_fidu_registros (\`archivo_id\`, ${ANEXO_FIDU_COLUMN_KEYS.map((c) => `\`${c}\``).join(',')}) VALUES (${['?', ...ANEXO_FIDU_COLUMN_KEYS.map(() => '?')].join(',')})`;
+
+        await db.transaction(async (conn) => {
+          await conn.execute('DELETE FROM anexo_fidu_registros WHERE archivo_id = ?', [archivoId]);
+          let orden = ordenInicial;
+          for (const data of registrosSanitizados) {
+            try {
+              await conn.execute(sql, [archivoId, orden, ...ANEXO_FIDU_COLUMN_KEYS.map((c) => data[c])]);
+            } catch (e) {
+              if (e.code !== 'ER_BAD_FIELD_ERROR') throw e;
+              await conn.execute(sqlFallback, [archivoId, ...ANEXO_FIDU_COLUMN_KEYS.map((c) => data[c])]);
+            }
+            insertados += 1;
+            orden += 1;
+          }
+        });
+
+        if (req.body?.actualizar_personas !== '0') {
+          for (const data of registrosSanitizados) {
+            await upsertPersonaDesdeRegistro(data);
+          }
         }
-        if (req.body?.actualizar_personas !== '0') await upsertPersonaDesdeRegistro(data);
-        insertados += 1;
-        orden += 1;
+      } else {
+        const cols = ['archivo_id', 'orden', ...ANEXO_FIDU_COLUMN_KEYS];
+        const placeholders = cols.map(() => '?').join(',');
+        const sql = `INSERT INTO anexo_fidu_registros (${cols.map((c) => `\`${c}\``).join(',')}) VALUES (${placeholders})`;
+        let orden = await siguienteOrdenRegistro(archivoId);
+        for (const raw of registros) {
+          const data = sanitizeRegistroBody(raw);
+          try {
+            await db.execute(sql, [archivoId, orden, ...ANEXO_FIDU_COLUMN_KEYS.map((c) => data[c])]);
+          } catch (e) {
+            if (e.code !== 'ER_BAD_FIELD_ERROR') throw e;
+            await db.execute(
+              `INSERT INTO anexo_fidu_registros (\`archivo_id\`, ${ANEXO_FIDU_COLUMN_KEYS.map((c) => `\`${c}\``).join(',')}) VALUES (${['?', ...ANEXO_FIDU_COLUMN_KEYS.map(() => '?')].join(',')})`,
+              [archivoId, ...ANEXO_FIDU_COLUMN_KEYS.map((c) => data[c])]
+            );
+          }
+          if (req.body?.actualizar_personas !== '0') await upsertPersonaDesdeRegistro(data);
+          insertados += 1;
+          orden += 1;
+        }
       }
 
       await pushAnexoASoportes(archivoId);
@@ -894,7 +921,7 @@ router.delete('/anexo-fidu/registros/:id', requireAuth, requirePermiso(PERM_ANEX
     const result = await db.execute('DELETE FROM anexo_fidu_registros WHERE id = ?', [req.params.id]);
     if (!result.affectedRows) return res.status(404).json({ error: 'Registro no encontrado' });
     if (prev[0]?.archivo_id) await pushAnexoASoportes(prev[0].archivo_id);
-    res.json({ ok: true });
+    res.json({ ok: true, archivo_id: prev[0]?.archivo_id || null });
   } catch (e) {
     res.status(500).json({ error: safeError(e) });
   }

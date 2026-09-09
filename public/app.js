@@ -18042,7 +18042,9 @@ async function buscarGestionDatos() {
 
   const tbody = $('bodyGestionDatos');
   const btnBuscar = $('btnBuscarGestion');
-  if (tbody) tbody.innerHTML = `<tr><td colspan="10">${htmlListaVacia('Cargando…')}</td></tr>`;
+  if (tbody && !(typeof window.innarHasPaintedContent === 'function' && window.innarHasPaintedContent(tbody))) {
+    tbody.innerHTML = `<tr><td colspan="10">${htmlListaVacia('Cargando…')}</td></tr>`;
+  }
   if (btnBuscar) btnBuscar.disabled = true;
   _gestionSeleccionados = new Set();
   _actualizarConteoGestion();

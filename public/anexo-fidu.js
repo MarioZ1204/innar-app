@@ -36,6 +36,13 @@
   let _personasTotal = 0;
   let _personasLimit = 50;
   let _registrosQ = '';
+  let afiduRegistrosFetchSeq = 0;
+  let afiduRegistrosFetchInFlight = false;
+  let afiduRegistrosFetchPending = false;
+  let afiduRegistrosFetchPendingOpts = null;
+  let afiduPersonasFetchSeq = 0;
+  let afiduPersonasFetchInFlight = false;
+  let afiduPersonasFetchPending = false;
 
   function syncAfiduIds() {
     _carpetaId = afiduState.carpetaId;
@@ -239,6 +246,12 @@
   async function cargarListaPersonas() {
     const anchor = $('afiduPersonasBody') || document.getElementById('view-anexo-fidu');
     const load = async () => {
+    if (afiduPersonasFetchInFlight) {
+      afiduPersonasFetchPending = true;
+      return;
+    }
+    afiduPersonasFetchInFlight = true;
+    const seq = ++afiduPersonasFetchSeq;
     const q = ($('afiduPersonasBuscar')?.value || '').trim();
     const qs = new URLSearchParams({
       page: String(_personasPage),
@@ -247,6 +260,7 @@
     if (q) qs.set('q', q);
     try {
       const data = await apiAnexo(`/api/anexo-fidu/personas?${qs}`);
+      if (seq !== afiduPersonasFetchSeq) return;
       _personasTotal = data.total || 0;
       renderPersonasBody(data.personas || []);
       const resumen = $('afiduPersonasResumen');
@@ -264,8 +278,14 @@
       if (prev) prev.disabled = _personasPage <= 1;
       if (next) next.disabled = _personasPage * _personasLimit >= _personasTotal;
     } catch (e) {
-      renderPersonasBody([]);
+      if (seq !== afiduPersonasFetchSeq) return;
       if (typeof showToast === 'function') showToast(e.message, 'error');
+    } finally {
+      afiduPersonasFetchInFlight = false;
+      if (afiduPersonasFetchPending) {
+        afiduPersonasFetchPending = false;
+        void cargarListaPersonas();
+      }
     }
     };
     if (typeof window.innarPreserveScroll === 'function') {
@@ -567,7 +587,7 @@
       await cargarRegistros();
     } catch (e) {
       actualizarInfoArchivo(e.message);
-      renderBody([]);
+      if (typeof showToast === 'function') showToast(e.message, 'error');
     }
     afiduIcons($('afiduArchivoWorkspace'));
     renderAfiduContextBar();
@@ -2078,33 +2098,58 @@
       _total = 0;
       return;
     }
-    const qs = new URLSearchParams({ page: String(_page), limit: String(_limit), archivo_id: String(_archivoId) });
-    if (_registrosQ) qs.set('q', _registrosQ);
-    const data = await apiAnexo(`/api/anexo-fidu/registros?${qs}`);
-    // Releer el draft por si el usuario siguió tecleando durante el fetch.
-    if (snap && liveInput && document.contains(liveInput)) {
-      snap.draft = String(liveInput.value ?? '');
-      try {
-        if (typeof liveInput.selectionStart === 'number') {
-          snap.selStart = liveInput.selectionStart;
-          snap.selEnd = liveInput.selectionEnd;
-        }
-      } catch (_) { /* ignore */ }
+    if (afiduRegistrosFetchInFlight) {
+      afiduRegistrosFetchPending = true;
+      afiduRegistrosFetchPendingOpts = { preserveEdit: preserveEdit || true };
+      return;
     }
-    _total = data.total || 0;
-    renderBody(data.registros || []);
-    const info = $('afiduPagerInfo');
-    if (info) {
-      const from = _total === 0 ? 0 : (_page - 1) * _limit + 1;
-      const to = Math.min(_page * _limit, _total);
-      info.textContent = `Mostrando ${from}–${to} de ${_total}`;
+    afiduRegistrosFetchInFlight = true;
+    const seq = ++afiduRegistrosFetchSeq;
+    const archivoIdSnap = _archivoId;
+    const pageSnap = _page;
+    const qSnap = _registrosQ;
+    const qs = new URLSearchParams({ page: String(pageSnap), limit: String(_limit), archivo_id: String(archivoIdSnap) });
+    if (qSnap) qs.set('q', qSnap);
+    try {
+      const data = await apiAnexo(`/api/anexo-fidu/registros?${qs}`);
+      if (seq !== afiduRegistrosFetchSeq) return;
+      if (archivoIdSnap !== _archivoId || pageSnap !== _page || qSnap !== _registrosQ) return;
+      // Releer el draft por si el usuario siguió tecleando durante el fetch.
+      if (snap && liveInput && document.contains(liveInput)) {
+        snap.draft = String(liveInput.value ?? '');
+        try {
+          if (typeof liveInput.selectionStart === 'number') {
+            snap.selStart = liveInput.selectionStart;
+            snap.selEnd = liveInput.selectionEnd;
+          }
+        } catch (_) { /* ignore */ }
+      }
+      _total = data.total || 0;
+      renderBody(data.registros || []);
+      const info = $('afiduPagerInfo');
+      if (info) {
+        const from = _total === 0 ? 0 : (_page - 1) * _limit + 1;
+        const to = Math.min(_page * _limit, _total);
+        info.textContent = `Mostrando ${from}–${to} de ${_total}`;
+      }
+      const prev = $('afiduPagerPrev');
+      const next = $('afiduPagerNext');
+      if (prev) prev.disabled = _page <= 1;
+      if (next) next.disabled = _page * _limit >= _total;
+      actualizarInfoArchivo(`${_total} fila(s)`);
+      if (snap) afiduRestaurarEdicion(snap);
+    } catch (e) {
+      if (seq !== afiduRegistrosFetchSeq) return;
+      if (typeof showToast === 'function') showToast(e.message, 'error');
+    } finally {
+      afiduRegistrosFetchInFlight = false;
+      if (afiduRegistrosFetchPending) {
+        afiduRegistrosFetchPending = false;
+        const pendingOpts = afiduRegistrosFetchPendingOpts || { preserveEdit: true };
+        afiduRegistrosFetchPendingOpts = null;
+        void cargarRegistros(pendingOpts);
+      }
     }
-    const prev = $('afiduPagerPrev');
-    const next = $('afiduPagerNext');
-    if (prev) prev.disabled = _page <= 1;
-    if (next) next.disabled = _page * _limit >= _total;
-    actualizarInfoArchivo(`${_total} fila(s)`);
-    if (snap) afiduRestaurarEdicion(snap);
   }
 
   async function eliminarRegistro(id, tr) {

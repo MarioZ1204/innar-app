@@ -2284,6 +2284,42 @@ function mapContenedor(row) {
   };
 }
 
+/** Evita GROUP BY c.* (ONLY_FULL_GROUP_BY en MySQL/MariaDB de hosting compartido). */
+async function queryContenedoresArmadoPorDia(diaId) {
+  return db.query(
+    `SELECT c.*,
+      (SELECT COUNT(*) FROM sop_expedientes e WHERE e.contenedor_id = c.id) AS expedientes_count
+     FROM sop_contenedores c
+     WHERE c.dia_id = ?
+     ORDER BY FIELD(c.tipo, 'rips', 'soportes'), c.id ASC`,
+    [diaId]
+  );
+}
+
+async function fetchAnexoArchivoResumen(archivoId) {
+  if (!archivoId) return null;
+  try {
+    const arch = await db.query(
+      `SELECT a.*, (SELECT COUNT(*) FROM anexo_fidu_registros r WHERE r.archivo_id = a.id) AS total_registros
+       FROM anexo_fidu_archivos a WHERE a.id = ?`,
+      [archivoId]
+    );
+    if (!arch.length) return null;
+    return {
+      archivo_id: arch[0].id,
+      nombre: arch[0].nombre,
+      ruta_export: arch[0].ruta_export || null,
+      total_registros: arch[0].total_registros || 0
+    };
+  } catch (e) {
+    if (e.code === 'ER_NO_SUCH_TABLE') {
+      logger.warn('[SOPORTES] tablas Anexo FIDU no migradas:', e.message);
+      return null;
+    }
+    throw e;
+  }
+}
+
 function mapPeriodo(row, visCtx) {
   const periodo = row.periodo;
   const calc = calcularVisibilidadPeriodo(periodo);
@@ -2715,14 +2751,7 @@ router.patch('/soportes/armado/dias/:id', requireAuth, requireRoleOrPerm(ROLES_S
     }
     const result = await actualizarDia(req.params.id, req.body || {});
     if (result.error) return res.status(result.status || 400).json({ error: result.error });
-    const contenedores = await db.query(
-      `SELECT c.*, COUNT(e.id) AS expedientes_count
-       FROM sop_contenedores c
-       LEFT JOIN sop_expedientes e ON e.contenedor_id = c.id
-       WHERE c.dia_id = ?
-       GROUP BY c.id ORDER BY FIELD(c.tipo, 'rips', 'soportes')`,
-      [req.params.id]
-    );
+    const contenedores = await queryContenedoresArmadoPorDia(req.params.id);
     res.json({
       ok: true,
       dia: mapDia({ ...result.dia, expedientes_count: contenedores.reduce((s, c) => s + (c.expedientes_count || 0), 0) }),
@@ -3043,19 +3072,7 @@ router.get('/soportes/armado/dias/:id/contenedores', requireAuth, requireRoleOrP
     let anexo = null;
     if (esModoAnexo(modo)) {
       if (dia[0].anexo_archivo_id) {
-        const arch = await db.query(
-          `SELECT a.*, (SELECT COUNT(*) FROM anexo_fidu_registros r WHERE r.archivo_id = a.id) AS total_registros
-           FROM anexo_fidu_archivos a WHERE a.id = ?`,
-          [dia[0].anexo_archivo_id]
-        );
-        if (arch.length) {
-          anexo = {
-            archivo_id: arch[0].id,
-            nombre: arch[0].nombre,
-            ruta_export: arch[0].ruta_export || null,
-            total_registros: arch[0].total_registros || 0
-          };
-        }
+        anexo = await fetchAnexoArchivoResumen(dia[0].anexo_archivo_id);
       }
       return res.json({
         dia: mapDia({ ...dia[0], expedientes_count: 0 }),
@@ -3072,14 +3089,7 @@ router.get('/soportes/armado/dias/:id/contenedores', requireAuth, requireRoleOrP
         logger.warn('[SOPORTES] sync RIPS carpetas:', syncErr.message);
       }
     }
-    const contenedores = await db.query(
-      `SELECT c.*, COUNT(e.id) AS expedientes_count
-       FROM sop_contenedores c
-       LEFT JOIN sop_expedientes e ON e.contenedor_id = c.id
-       WHERE c.dia_id = ?
-       GROUP BY c.id ORDER BY FIELD(c.tipo, 'rips', 'soportes')`,
-      [req.params.id]
-    );
+    const contenedores = await queryContenedoresArmadoPorDia(req.params.id);
     let ucqn_expediente_id = null;
     if (esModoUcqn(modo)) {
       const exp = await db.query(
@@ -3100,6 +3110,7 @@ router.get('/soportes/armado/dias/:id/contenedores', requireAuth, requireRoleOrP
       contenedores: contenedores.map(mapContenedor)
     });
   } catch (e) {
+    logger.error('[SOPORTES] GET dia contenedores:', e.message, { diaId: req.params.id });
     res.status(500).json({ error: safeError(e) });
   }
 });
