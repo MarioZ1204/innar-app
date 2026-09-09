@@ -631,6 +631,11 @@ function pdxInsertId(result) {
   return insertRowId(result);
 }
 
+function isMysqlError(e) {
+  const code = String(e?.code || '');
+  return code.startsWith('ER_') || !!e?.sqlState;
+}
+
 function sopErrorCliente(e, fallback = 'Error interno del servidor') {
   if (e.code === 'ER_NO_SUCH_TABLE') {
     return 'Módulo Soportes no inicializado en la base de datos. Reinicie la aplicación (migraciones al arranque).';
@@ -647,8 +652,15 @@ function sopErrorCliente(e, fallback = 'Error interno del servidor') {
   if (e.code === 'ENSURE_DIR_FAILED' || e.code === 'EACCES' || e.code === 'EPERM' || e.code === 'EROFS') {
     const { checkUploadsWritable } = require('../config/uploads-path');
     const uploads = checkUploadsWritable();
+    const failedPath = String(e?.message || '').replace(/^No se pudo crear directorio:\s*/i, '').trim();
     if (uploads.exists && !uploads.writable) {
-      return `Sin permiso de escritura en ${uploads.path}. La ruta UPLOADS_DIR es correcta; en Hostinger (Administrador de archivos) asigne permisos 755 o 775 a private_uploads y private_uploads/soportes, luego reinicie Node.`;
+      return `Sin permiso de escritura en ${uploads.path}. Asigne permisos 755 o 775 a private_uploads y reinicie Node.`;
+    }
+    if (uploads.writable && !uploads.armadoWritable) {
+      return `UPLOADS_DIR es escribible en la raíz, pero no en soportes/armado (${failedPath || uploads.error || 'sin detalle'}). En Hostinger asigne 755/775 a private_uploads/soportes y private_uploads/soportes/armado.`;
+    }
+    if (uploads.writable && failedPath) {
+      return `No se pudo crear la carpeta en disco: ${failedPath}. Revise permisos o espacio en ${uploads.path}/soportes/armado.`;
     }
     const envHint = process.env.UPLOADS_DIR ? '' : ' (UPLOADS_DIR no está definido; usa public/uploads dentro del repo)';
     return `No se pudo usar la carpeta de archivos ${uploads.path}${envHint}. Créela en Hostinger, asigne permisos de escritura y reinicie Node.`;
@@ -3095,27 +3107,24 @@ router.get('/soportes/armado/dias/:id/contenedores', requireAuth, requireRoleOrP
     const { isUploadsWritable } = require('../config/uploads-path');
     const uploadsCheck = isUploadsWritable();
     let storageWarning = null;
-    if (!uploadsCheck.writable) {
+    if (!uploadsCheck.writableForArmado) {
       storageWarning = uploadsCheck.error
-        ? `Almacenamiento no escribible: ${uploadsCheck.error}`
-        : 'Almacenamiento no escribible; revise permisos de private_uploads en Hostinger.';
-      logger.warn('[SOPORTES] UPLOADS_DIR no escribible al listar día:', uploadsCheck.path, uploadsCheck.error || '');
+        ? `Almacenamiento limitado: ${uploadsCheck.error}`
+        : 'No se puede crear carpetas en soportes/armado; revise permisos en Hostinger.';
+      logger.warn('[SOPORTES] armado no escribible al listar día:', uploadsCheck.path, uploadsCheck.error || '');
     }
     let contenedores = [];
     try {
       await ensureContenedoresForDia(db, req.params.id);
-      if (esModoFacturacion(modo) && uploadsCheck.writable) {
+      if (esModoFacturacion(modo) && uploadsCheck.writableForArmado) {
         await syncRipsCarpetasDia(db, req.params.id, req.session?.usuarioId);
       }
       contenedores = await queryContenedoresArmadoPorDia(req.params.id);
-    } catch (diskOrListErr) {
-      const diskCodes = new Set(['ENSURE_DIR_FAILED', 'EACCES', 'EPERM', 'EROFS']);
-      if (diskCodes.has(diskOrListErr.code)) {
-        logger.warn('[SOPORTES] disco no escribible al abrir día, listando desde BD:', diskOrListErr.message);
-        contenedores = await queryContenedoresArmadoPorDia(req.params.id);
-      } else {
-        throw diskOrListErr;
-      }
+    } catch (prepErr) {
+      if (isMysqlError(prepErr)) throw prepErr;
+      logger.warn('[SOPORTES] fallo no crítico al preparar día, listando desde BD:', prepErr.message);
+      contenedores = await queryContenedoresArmadoPorDia(req.params.id);
+      if (!storageWarning) storageWarning = `Listado desde base de datos (${prepErr.message})`;
     }
     let ucqn_expediente_id = null;
     if (esModoUcqn(modo)) {

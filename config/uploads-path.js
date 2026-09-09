@@ -41,10 +41,23 @@ let uploadsWritableCache = null;
 let uploadsWritableCacheAt = 0;
 const UPLOADS_WRITABLE_CACHE_MS = 30000;
 
-/** Comprueba si UPLOADS_DIR existe y permite escribir (para diagnóstico en producción). */
+function writeProbe(dir, label) {
+  const testFile = path.join(dir, `.write_test_${process.pid}_${label}`);
+  fs.writeFileSync(testFile, 'ok');
+  fs.unlinkSync(testFile);
+}
+
+/** Comprueba si UPLOADS_DIR existe y permite escribir (raíz + soportes/armado). */
 function checkUploadsWritable() {
   const root = resolveUploadsRoot();
-  const result = { path: root, exists: fs.existsSync(root), writable: false, error: null };
+  const result = {
+    path: root,
+    exists: fs.existsSync(root),
+    writable: false,
+    soportesWritable: false,
+    armadoWritable: false,
+    error: null
+  };
   try {
     if (!result.exists) tryMkdir(root);
     result.exists = fs.existsSync(root);
@@ -52,12 +65,25 @@ function checkUploadsWritable() {
       result.error = 'La carpeta no existe y no se pudo crear';
       return result;
     }
-    const testFile = path.join(root, `.write_test_${process.pid}`);
-    fs.writeFileSync(testFile, 'ok');
-    fs.unlinkSync(testFile);
+    writeProbe(root, 'root');
     result.writable = true;
+
+    const soportesDir = path.join(root, 'soportes');
+    tryMkdir(soportesDir);
+    writeProbe(soportesDir, 'soportes');
+    result.soportesWritable = true;
+
+    const armadoDir = path.join(soportesDir, 'armado');
+    tryMkdir(armadoDir);
+    writeProbe(armadoDir, 'armado');
+    result.armadoWritable = true;
   } catch (e) {
     result.error = e.message || String(e);
+    if (result.writable && !result.armadoWritable) {
+      result.error = `Raíz escribible pero soportes/armado no: ${result.error}`;
+    } else if (result.writable && !result.soportesWritable) {
+      result.error = `Raíz escribible pero soportes/ no: ${result.error}`;
+    }
   }
   return result;
 }
@@ -68,7 +94,12 @@ function isUploadsWritable() {
   if (uploadsWritableCache && now - uploadsWritableCacheAt < UPLOADS_WRITABLE_CACHE_MS) {
     return uploadsWritableCache;
   }
-  uploadsWritableCache = checkUploadsWritable();
+  const checked = checkUploadsWritable();
+  uploadsWritableCache = {
+    ...checked,
+    /** Sync RIPS / carpetas FE requiere poder crear bajo soportes/armado. */
+    writableForArmado: !!(checked.writable && checked.armadoWritable)
+  };
   uploadsWritableCacheAt = now;
   return uploadsWritableCache;
 }

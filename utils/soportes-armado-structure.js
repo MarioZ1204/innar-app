@@ -128,14 +128,17 @@ async function ensureFeParEnContenedorHermano(db, diaId, contenedorId, codigo, n
     const row = ctx[0];
     try {
       const sopStorage = require('./soportes-storage');
-      getArmadoFeDirAbs(
+      const { tryMkdir } = require('../config/uploads-path');
+      const { abs } = getArmadoFeDirAbs(
         sopStorage.soportesRoot,
         row.periodo_etiqueta || row.periodo || '',
         row.nombre_display,
         row.estado_facturacion,
         row.contenedor_tipo,
-        carpetaFisica
+        carpetaFisica,
+        { ensure: false }
       );
+      tryMkdir(abs);
     } catch (diskErr) {
       const logger = require('./logger');
       logger.warn('[SOPORTES] carpeta FE hermano disco:', diskErr.message);

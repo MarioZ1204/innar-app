@@ -229,7 +229,15 @@ app.get('/api/health/deep', requireAuth, async (req, res) => {
   const start = Date.now();
   const checks = {
     db: { ok: false, latency_ms: null, error: null },
-    uploadsDir: { ok: false, path: null, writable: false, soportesPdxFiles: 0, error: null },
+    uploadsDir: {
+      ok: false,
+      path: null,
+      writable: false,
+      soportesWritable: false,
+      armadoWritable: false,
+      soportesPdxFiles: 0,
+      error: null
+    },
     backupsDir: { ok: false, path: null, files: 0, latestAgeHours: null, error: null },
     logsDir: { ok: false, sizeBytes: 0, error: null },
     process: {
@@ -251,14 +259,15 @@ app.get('/api/health/deep', requireAuth, async (req, res) => {
   }
 
   try {
-    const { getUploadsRoot } = require('./config/uploads-path');
-    const uploadsDir = getUploadsRoot();
-    const testFile = path.join(uploadsDir, '.write_test');
-    fs.writeFileSync(testFile, 'ok');
-    fs.unlinkSync(testFile);
+    const { checkUploadsWritable, getUploadsRoot } = require('./config/uploads-path');
+    const uploadsProbe = checkUploadsWritable();
+    const uploadsDir = uploadsProbe.path || getUploadsRoot();
     checks.uploadsDir.path = uploadsDir;
-    checks.uploadsDir.writable = true;
-    checks.uploadsDir.ok = true;
+    checks.uploadsDir.writable = uploadsProbe.writable;
+    checks.uploadsDir.soportesWritable = uploadsProbe.soportesWritable;
+    checks.uploadsDir.armadoWritable = uploadsProbe.armadoWritable;
+    checks.uploadsDir.ok = uploadsProbe.writable && uploadsProbe.armadoWritable;
+    if (uploadsProbe.error) checks.uploadsDir.error = uploadsProbe.error;
     const pdxRoot = path.join(uploadsDir, 'soportes', 'pdx');
     if (fs.existsSync(pdxRoot)) {
       let count = 0;
