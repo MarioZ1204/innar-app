@@ -47,6 +47,9 @@ const PUBLIC_DIR = path.join(__dirname, 'public');
 const app = express();
 app.locals.appVersion = APP_VERSION;
 
+const { applyMaintenanceMode } = require('./config/maintenance');
+applyMaintenanceMode(app, { publicDir: PUBLIC_DIR });
+
 const RECOVERY_FLAGS = ['SOPORTES_RECOVERY_ON_DEPLOY', 'SOPORTES_RESTORE_FILES_ON_DEPLOY'];
 if (RECOVERY_FLAGS.some((flag) => process.env[flag] === '1' || process.env[flag] === 'true')) {
   runRecoveryBootstrap().catch((error) => {

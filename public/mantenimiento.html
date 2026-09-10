@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"/>
+  <meta name="robots" content="noindex, nofollow"/>
+  <title>{{TITLE}} — Instituto Neurociencias de Nariño</title>
+  <link rel="icon" type="image/png" href="/images/icon.png"/>
+  <style>
+    :root {
+      --c-brand: #5f7f79;
+      --c-brand-dark: #3d5c56;
+      --c-bg: #eef2f1;
+      --c-surface: #ffffff;
+      --c-text: #0f172a;
+      --c-muted: #64748b;
+      --c-border: #d8e2e0;
+      --radius: 16px;
+      --shadow: 0 12px 40px rgba(15, 23, 42, 0.1);
+    }
+    * { box-sizing: border-box; }
+    html, body {
+      margin: 0;
+      min-height: 100%;
+      font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
+      color: var(--c-text);
+      background: linear-gradient(145deg, #f6f8f7 0%, var(--c-bg) 45%, #e4ebe9 100%);
+    }
+    .wrap {
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 24px 16px 48px;
+    }
+    .card {
+      width: min(520px, 100%);
+      background: var(--c-surface);
+      border: 1px solid var(--c-border);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      padding: 36px 32px 32px;
+      text-align: center;
+    }
+    .logo {
+      width: 120px;
+      height: auto;
+      margin: 0 auto 20px;
+      display: block;
+    }
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 14px;
+      border-radius: 999px;
+      background: #e8f0ef;
+      color: var(--c-brand-dark);
+      font-size: 0.8rem;
+      font-weight: 600;
+      letter-spacing: 0.02em;
+      text-transform: uppercase;
+      margin-bottom: 18px;
+    }
+    .badge svg {
+      width: 16px;
+      height: 16px;
+      flex-shrink: 0;
+    }
+    h1 {
+      margin: 0 0 12px;
+      font-size: 1.55rem;
+      line-height: 1.25;
+      color: var(--c-brand-dark);
+    }
+    .message {
+      margin: 0 0 20px;
+      font-size: 1.02rem;
+      line-height: 1.55;
+      color: var(--c-muted);
+    }
+    .until {
+      margin: 0 0 24px;
+      padding: 12px 16px;
+      border-radius: 10px;
+      background: #f4f7f6;
+      border: 1px dashed var(--c-border);
+      font-size: 0.95rem;
+      color: var(--c-text);
+    }
+    .until:empty { display: none; }
+    .foot {
+      font-size: 0.82rem;
+      color: #94a3b8;
+      line-height: 1.45;
+    }
+    .foot strong { color: var(--c-muted); font-weight: 600; }
+    .pulse {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      background: #f59e0b;
+      box-shadow: 0 0 0 0 rgba(245, 158, 11, 0.5);
+      animation: pulse 2s infinite;
+    }
+    @keyframes pulse {
+      0% { box-shadow: 0 0 0 0 rgba(245, 158, 11, 0.45); }
+      70% { box-shadow: 0 0 0 10px rgba(245, 158, 11, 0); }
+      100% { box-shadow: 0 0 0 0 rgba(245, 158, 11, 0); }
+    }
+    @media (max-width: 480px) {
+      .card { padding: 28px 20px 24px; }
+      h1 { font-size: 1.35rem; }
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <main class="card" role="main">
+      <img class="logo" src="/images/logo3.webp" alt="Instituto Neurociencias de Nariño" width="120" height="auto"/>
+      <div class="badge" aria-hidden="true">
+        <span class="pulse"></span>
+        Mantenimiento
+      </div>
+      <h1>{{TITLE}}</h1>
+      <p class="message">{{MESSAGE}}</p>
+      <p class="until">{{UNTIL}}</p>
+      <p class="foot">
+        <strong>Innar App</strong> — Sistema de gestión clínica<br/>
+        Gracias por su paciencia.
+      </p>
+    </main>
+  </div>
+</body>
+</html>
