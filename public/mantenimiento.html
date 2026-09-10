@@ -89,6 +89,20 @@
       color: var(--c-text);
     }
     .until:empty { display: none; }
+    .url-wrap { margin: 0 0 24px; }
+    .url-btn {
+      display: inline-block;
+      padding: 12px 22px;
+      border-radius: 10px;
+      background: var(--c-brand);
+      color: #fff !important;
+      text-decoration: none;
+      font-weight: 600;
+      font-size: 0.98rem;
+      word-break: break-all;
+      transition: background 0.15s ease;
+    }
+    .url-btn:hover { background: var(--c-brand-dark); }
     .foot {
       font-size: 0.82rem;
       color: #94a3b8;
@@ -124,6 +138,7 @@
       </div>
       <h1>{{TITLE}}</h1>
       <p class="message">{{MESSAGE}}</p>
+      {{URL_BLOCK}}
       <p class="until">{{UNTIL}}</p>
       <p class="foot">
         <strong>Innar App</strong> — Sistema de gestión clínica<br/>

@@ -1,5 +1,7 @@
 {
-  "title": "Sistema en mantenimiento",
-  "message": "Estamos migrando el sistema a un entorno local de pruebas. El acceso en línea volverá a estar disponible cuando finalicemos la actualización.",
-  "until": "Estimado: en las próximas horas"
+  "title": "Cambio de entorno del sistema",
+  "message": "Estamos migrando Innar App a un nuevo entorno local. El acceso en línea estará temporalmente suspendido. Cuando el servicio esté disponible, utilice el siguiente enlace (red local de la institución):",
+  "url": "http://innarapp:3000",
+  "urlLabel": "Abrir Innar App — http://innarapp:3000",
+  "until": "Si el enlace no abre, verifique que está conectado a la red de la institución o al VPN."
 }

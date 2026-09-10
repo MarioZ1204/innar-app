@@ -15,6 +15,8 @@
  *   MAINTENANCE_TITLE=...
  *   MAINTENANCE_MESSAGE=...
  *   MAINTENANCE_UNTIL=Estimado: hoy 18:00
+ *   MAINTENANCE_URL=http://innarapp:3000
+ *   MAINTENANCE_URL_LABEL=Abrir Innar App
  *   MAINTENANCE_BYPASS_KEY=secreto  →  ?bypass=secreto (cookie 2 h)
  */
 const fs = require('fs');
@@ -72,8 +74,18 @@ function getMaintenanceConfig() {
   return {
     title: process.env.MAINTENANCE_TITLE || fileCfg.title || defaults.title,
     message: process.env.MAINTENANCE_MESSAGE || fileCfg.message || defaults.message,
-    until: process.env.MAINTENANCE_UNTIL || fileCfg.until || defaults.until
+    until: process.env.MAINTENANCE_UNTIL || fileCfg.until || defaults.until,
+    url: process.env.MAINTENANCE_URL || fileCfg.url || '',
+    urlLabel: process.env.MAINTENANCE_URL_LABEL || fileCfg.urlLabel || ''
   };
+}
+
+function buildUrlBlock(cfg) {
+  const url = String(cfg.url || '').trim();
+  if (!url) return '';
+  const label = escapeHtml(cfg.urlLabel || url);
+  const safeUrl = escapeHtml(url);
+  return `<p class="url-wrap"><a class="url-btn" href="${safeUrl}">${label}</a></p>`;
 }
 
 function isAllowedDuringMaintenance(reqPath) {
@@ -120,6 +132,7 @@ function buildMaintenanceHtml(publicDir, cfg) {
   html = html
     .replace(/\{\{TITLE\}\}/g, escapeHtml(cfg.title))
     .replace(/\{\{MESSAGE\}\}/g, escapeHtml(cfg.message))
+    .replace(/\{\{URL_BLOCK\}\}/g, buildUrlBlock(cfg))
     .replace(/\{\{UNTIL\}\}/g, cfg.until ? escapeHtml(cfg.until) : '');
   return html;
 }
@@ -129,7 +142,7 @@ function applyMaintenanceMode(app, { publicDir }) {
   let htmlCacheKey = '';
 
   function renderMaintenanceHtml(cfg) {
-    const key = `${cfg.title}|${cfg.message}|${cfg.until}`;
+    const key = `${cfg.title}|${cfg.message}|${cfg.until}|${cfg.url}|${cfg.urlLabel}`;
     if (htmlCache && htmlCacheKey === key) return htmlCache;
     htmlCache = buildMaintenanceHtml(publicDir, cfg);
     htmlCacheKey = key;
